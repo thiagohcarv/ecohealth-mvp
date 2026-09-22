@@ -1,0 +1,175 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Médico ───────────────────────────────────────────────────────────────────
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  crm          String   @unique // Conselho Regional de Medicina (ex: "SP-123456")
+  cpf          String?  @unique
+  phone        String?
+  isVerified   Boolean  @default(false)
+  password     String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  plan                 String   @default("trial")
+  trialEndsAt          DateTime @default(dbgenerated("now() + interval '30 days'"))
+  stripeCustomerId     String?
+  stripeSubscriptionId String?
+
+  patients      Patient[]
+  consultations Consultation[]
+  lgpdConsents  LgpdConsent[]
+
+  @@map("users")
+}
+
+// ─── Paciente ─────────────────────────────────────────────────────────────────
+model Patient {
+  id          String    @id @default(cuid())
+  name        String
+  dateOfBirth DateTime?
+  cpf         String?   @unique
+  phone       String?
+  email       String?
+  notes       String?   @db.Text
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  doctorId      String
+  doctor        User           @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  consultations Consultation[]
+
+  @@index([doctorId])
+  @@map("patients")
+}
+
+// ─── Consulta ─────────────────────────────────────────────────────────────────
+model Consultation {
+  id        String             @id @default(cuid())
+  date      DateTime           @default(now())
+  status    ConsultationStatus @default(PENDING)
+  chiefComplaint String?       @db.Text
+  signedAt  DateTime?
+  pdfPath   String?
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  doctorId  String
+  doctor    User    @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  audioRecording AudioRecording?
+  soapNote       SoapNote?
+
+  @@index([doctorId])
+  @@index([patientId])
+  @@index([status])
+  @@map("consultations")
+}
+
+enum ConsultationStatus {
+  PENDING
+  RECORDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  SIGNED
+}
+
+// ─── Gravação de áudio ────────────────────────────────────────────────────────
+model AudioRecording {
+  id                  String              @id @default(cuid())
+  s3Key               String?             @unique // caminho no S3 (opcional no MVP)
+  s3Bucket            String?
+  durationSec         Int?
+  sizeBytes           BigInt?
+  mimeType            String              @default("audio/webm")
+  transcription       String?             @db.Text // output do Whisper
+  transcribedAt       DateTime?
+  transcriptionStatus TranscriptionStatus @default(PENDING)
+  createdAt           DateTime            @default(now())
+
+  consultationId String       @unique
+  consultation   Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+
+  @@map("audio_recordings")
+}
+
+enum TranscriptionStatus {
+  PENDING
+  COMPLETED
+  ERROR
+}
+
+// ─── Nota SOAP ────────────────────────────────────────────────────────────────
+model SoapNote {
+  id         String     @id @default(cuid())
+  subjective String     @db.Text // S — queixas subjetivas do paciente
+  objective  String     @db.Text // O — dados objetivos (exame físico, sinais vitais)
+  assessment String     @db.Text // A — avaliação/diagnóstico do médico
+  plan       String     @db.Text // P — plano terapêutico
+  icd10Codes String[]   // CID-10 sugeridos pela IA
+  rawJson    Json?      // resposta completa do LLM para auditoria
+  model      String     // "gpt-4o" | "mock"
+  confidence Float?     // confiança da IA (0-1)
+  soapStatus SoapStatus @default(PENDING)
+  promptTokens  Int?
+  outputTokens  Int?
+  editedAt   DateTime?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  consultationId String       @unique
+  consultation   Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+
+  @@map("soap_notes")
+}
+
+enum SoapStatus {
+  PENDING
+  COMPLETED
+  ERROR
+}
+
+// ─── Log de auditoria ─────────────────────────────────────────────────────────
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String   // No FK — audit logs survive user deletion
+  action     String   // LOGIN_SUCCESS, CONSULTATION_VIEWED, SOAP_GENERATED, etc.
+  resource   String   // "auth", "consultation", "patient", "audio"
+  resourceId String?  // ID do recurso afetado
+  ipAddress  String?
+  userAgent  String?
+  success    Boolean  @default(true)
+  metadata   Json?    // contexto extra (nunca PII — apenas IDs e status)
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ─── Consentimento LGPD ───────────────────────────────────────────────────────
+model LgpdConsent {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  acceptedAt DateTime @default(now())
+  ipAddress  String
+  userAgent  String   @db.Text
+  version    String   @default("1.0")
+
+  @@index([userId])
+  @@map("lgpd_consents")
+}

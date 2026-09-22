@@ -1,0 +1,23 @@
+# dependencies
+node_modules/
+
+# build
+dist/
+*.tsbuildinfo
+
+# env files (all variants, any environment)
+.env
+.env*.local
+.env.production
+.env.development
+
+# secrets / certificates
+*.pem
+*.pfx
+*.key
+
+# prisma
+prisma/*.db
+
+# misc
+.DS_Store

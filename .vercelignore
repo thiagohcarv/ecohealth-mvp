@@ -1,0 +1,7 @@
+server/
+e2e/
+load-tests/
+playwright-report/
+test-results/
+figma-plugin/
+outputs/

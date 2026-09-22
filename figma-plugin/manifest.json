@@ -1,0 +1,7 @@
+{
+  "name": "EcoHealth — Criar 6 Telas",
+  "id": "ecohealth-create-screens",
+  "api": "1.0.0",
+  "main": "code.js",
+  "editorType": ["figma"]
+}
