@@ -20,6 +20,10 @@ function normalizeCrm(uf: string, crm: string): string {
   return `${uf.toUpperCase()}-${clean}`;
 }
 
+function sanitizeNome(nome: string): string {
+  return nome.trim().replace(/^dr\.?\(?a?\)?\.?\s+/i, "").trim();
+}
+
 function generateOtp(): string {
   // Mock: fixo para alpha. Em produção: Math.floor(100000 + Math.random() * 900000).toString()
   return "123456";
@@ -49,6 +53,7 @@ router.post("/register", async (req: Request, res: Response) => {
 
   const { email, senha, nome, crm, uf, cpf, telefone } = parse.data;
   const crmFormatado = normalizeCrm(uf, crm);
+  const nomeSanitizado = sanitizeNome(nome);
 
   try {
     // Verifica duplicatas
@@ -73,7 +78,7 @@ router.post("/register", async (req: Request, res: Response) => {
     const user = await prisma.user.create({
       data: {
         email,
-        name: nome,
+        name: nomeSanitizado,
         crm: crmFormatado,
         password: passwordHash,
         ...(cpf ? { cpf } : {}),

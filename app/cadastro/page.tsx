@@ -11,6 +11,10 @@ import { setPendingEmail } from "@/lib/auth";
 
 const UF_LIST = ["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"];
 
+function sanitizeNome(nome: string): string {
+  return nome.trim().replace(/^dr\.?\(?a?\)?\.?\s+/i, "").trim();
+}
+
 interface CadastroForm {
   nome: string;
   cpf: string;
@@ -64,7 +68,7 @@ export default function CadastroPage() {
     const result = await api.post<AuthResponse>("/api/auth/register", {
       email: form.email,
       senha: form.senha,
-      nome: form.nome,
+      nome: sanitizeNome(form.nome),
       crm: form.crm,
       uf: form.uf,
       cpf: form.cpf || undefined,
@@ -117,7 +121,7 @@ export default function CadastroPage() {
             <Input
               label="Nome completo"
               type="text"
-              placeholder="Dr. João Silva"
+              placeholder="Seu nome completo"
               value={form.nome}
               onChange={set("nome")}
               error={errors.nome}
