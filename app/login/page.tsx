@@ -6,7 +6,6 @@ import { useState } from "react";
 import { EcoHealthLogo } from "@/components/EcoHealthLogo";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { MobileScreen } from "@/components/layout/MobileScreen";
 import { api, type AuthResponse } from "@/lib/api";
 import { setToken, setUser } from "@/lib/auth";
 
@@ -45,8 +44,8 @@ export default function LoginPage() {
   }
 
   return (
-    <MobileScreen>
-      <div className="flex flex-col min-h-screen px-[37px] pt-[97px] pb-8">
+    <main className="min-h-screen flex items-center justify-center bg-[#F8F9FF] px-4 py-8">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-lg p-8">
         {/* Logo */}
         <div className="flex justify-center mb-8">
           <EcoHealthLogo size="md" />
@@ -54,16 +53,16 @@ export default function LoginPage() {
 
         {/* Título */}
         <div className="flex flex-col gap-3 mb-8 animate-fade-in">
-          <h1 className="font-inter font-bold text-[32px] text-secondary-500 tracking-[-0.64px] leading-[1.3]">
+          <h1 className="font-inter font-bold text-[32px] text-secondary-500 tracking-[-0.64px] leading-[1.3] text-center">
             Entrar na sua Conta
           </h1>
-          <p className="text-xs font-medium font-inter text-secondary-400 tracking-[-0.12px] leading-[1.4]">
+          <p className="text-xs font-medium font-inter text-secondary-400 tracking-[-0.12px] leading-[1.4] text-center">
             Digite seu email e senha para entrar
           </p>
         </div>
 
         {/* Formulário */}
-        <form onSubmit={handleSubmit} className="flex flex-col gap-6 flex-1">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-6">
           <div className="flex flex-col gap-4">
             <Input
               label="Email"
@@ -131,7 +130,7 @@ export default function LoginPage() {
           </div>
 
           {/* Link de cadastro */}
-          <div className="flex items-center justify-center gap-1.5 mt-auto pt-4">
+          <div className="flex items-center justify-center gap-1.5 pt-2">
             <span className="text-xs font-medium font-inter text-secondary-400 tracking-[-0.12px]">
               Não tem conta?
             </span>
@@ -144,7 +143,7 @@ export default function LoginPage() {
           </div>
         </form>
       </div>
-    </MobileScreen>
+    </main>
   );
 }
 
