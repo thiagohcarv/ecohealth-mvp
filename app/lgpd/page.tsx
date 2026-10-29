@@ -5,15 +5,18 @@ import { useState } from "react";
 import { MobileScreen } from "@/components/layout/MobileScreen";
 import { api } from "@/lib/api";
 
-const LGPD_VERSION = "1.0";
+const LGPD_VERSION = "2.0"; // manter igual a CURRENT_CONSENT_VERSION (server/src/lib/consent.ts)
 
 export default function LgpdPage() {
   const router = useRouter();
-  const [accepted, setAccepted] = useState(false);
+  const [acceptedLgpd, setAcceptedLgpd] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const canContinue = acceptedLgpd && acceptedTerms;
   const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState("");
 
   async function handleContinuar() {
-    if (!accepted) return;
+    if (!canContinue) return;
     setLoading(true);
 
     const token =
@@ -21,8 +24,15 @@ export default function LgpdPage() {
 
     if (token) {
       // Usuário autenticado — salva consentimento agora
-      await api.post("/api/auth/lgpd-consent", {});
-      router.push("/dashboard");
+      const res = await api.post("/api/auth/lgpd-consent", { acceptLgpd: true, acceptTerms: true });
+      if ("error" in res) {
+        setErro(res.error ?? "Não foi possível registrar o aceite. Tente novamente.");
+        setLoading(false);
+        return;
+      }
+      // Volta para a tela de origem (ex.: /nova-consulta), só aceita caminho interno
+      const next = new URLSearchParams(window.location.search).get("next");
+      router.push(next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard");
     } else {
       // Pré-cadastro — salva pendente no localStorage
       localStorage.setItem("eco_lgpd_pending", LGPD_VERSION);
@@ -138,8 +148,35 @@ export default function LgpdPage() {
               </p>
             </Section>
 
+            <Section title="9. Termos de Uso">
+              <ul className="list-disc pl-4 flex flex-col gap-1.5">
+                <li>
+                  <strong>Responsabilidade clínica:</strong> o médico é o único responsável por revisar,
+                  editar e validar notas SOAP, códigos CID-10 e qualquer conteúdo gerado por IA. A IA pode
+                  errar e não substitui o julgamento clínico.
+                </li>
+                <li>
+                  <strong>Consentimento do paciente:</strong> o médico deve informar o paciente e obter
+                  seu consentimento para a gravação da consulta, conforme a LGPD e as normas do CFM.
+                </li>
+                <li>
+                  <strong>Uso profissional:</strong> acesso exclusivo a médicos com CRM ativo. A conta é
+                  pessoal e intransferível; não compartilhe suas credenciais.
+                </li>
+                <li>
+                  <strong>Versão alpha:</strong> funcionalidades podem mudar ou ficar indisponíveis. A
+                  assinatura digital é simulada, <strong>sem validade jurídica</strong>, e não deve ser
+                  usada como documento oficial.
+                </li>
+                <li>
+                  <strong>Uso adequado:</strong> é proibido inserir dados para fins alheios à prática
+                  médica, tentar burlar a segurança ou realizar engenharia reversa da plataforma.
+                </li>
+              </ul>
+            </Section>
+
             <div className="text-[11px] text-secondary-400 border-t border-secondary-100 pt-3 mt-1">
-              Versão {LGPD_VERSION} · Vigente a partir de 22/06/2026 ·{" "}
+              Versão {LGPD_VERSION} · Vigente a partir de 29/10/2026 ·{" "}
               <strong>EcoHealth Tecnologia Ltda.</strong>
             </div>
           </div>
@@ -147,32 +184,26 @@ export default function LgpdPage() {
 
         {/* Footer de aceite */}
         <div className="px-6 py-5 border-t border-secondary-100 bg-white">
-          {/* Checkbox */}
-          <button
-            onClick={() => setAccepted((v) => !v)}
-            className="flex items-start gap-3 w-full mb-5"
-          >
-            <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 mt-0.5 transition-colors ${
-              accepted ? "bg-primary border-primary" : "border-secondary-300"
-            }`}>
-              {accepted && (
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              )}
-            </div>
-            <span className="text-sm font-inter text-secondary-500 text-left leading-snug">
-              Li e concordo com a Política de Privacidade e os termos de tratamento de dados da
-              EcoHealth conforme a LGPD.
-            </span>
-          </button>
+          {/* Aceites obrigatórios (ambos) */}
+          <CheckRow checked={acceptedLgpd} onToggle={() => setAcceptedLgpd((v) => !v)}>
+            Li e concordo com a <strong>Política de Privacidade</strong> e o tratamento de dados
+            pessoais e de saúde conforme a LGPD.
+          </CheckRow>
+          <CheckRow checked={acceptedTerms} onToggle={() => setAcceptedTerms((v) => !v)}>
+            Li e aceito os <strong>Termos de Uso</strong> da EcoHealth.
+          </CheckRow>
+          <p className="text-[11px] text-secondary-400 font-inter mb-4">
+            Os dois aceites são obrigatórios para usar o EcoHealth.
+          </p>
+
+          {erro && <p className="text-xs text-red-500 font-inter text-center">{erro}</p>}
 
           {/* Botão Continuar */}
           <button
             onClick={handleContinuar}
-            disabled={!accepted || loading}
+            disabled={!canContinue || loading}
             className={`w-full h-12 rounded-3xl text-sm font-semibold font-inter transition-all ${
-              accepted
+              canContinue
                 ? "bg-primary text-white shadow-md active:scale-[0.98]"
                 : "bg-secondary-100 text-secondary-300 cursor-not-allowed"
             }`}
@@ -206,5 +237,30 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <p className="font-semibold text-secondary-500 mb-1.5">{title}</p>
       <div className="text-secondary-400">{children}</div>
     </div>
+  );
+}
+
+function CheckRow({
+  checked,
+  onToggle,
+  children,
+}: {
+  checked: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button type="button" role="checkbox" aria-checked={checked} onClick={onToggle} className="flex items-start gap-3 w-full mb-3">
+      <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 mt-0.5 transition-colors ${
+        checked ? "bg-primary border-primary" : "border-secondary-300"
+      }`}>
+        {checked && (
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        )}
+      </div>
+      <span className="text-sm font-inter text-secondary-500 text-left leading-snug">{children}</span>
+    </button>
   );
 }

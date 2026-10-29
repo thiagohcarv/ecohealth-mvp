@@ -51,3 +51,15 @@ export async function mockBilling(page: Page): Promise<void> {
     })
   );
 }
+
+/** Mocks GET /api/auth/lgpd-consent (aceite vigente LGPD + Termos de Uso). */
+export async function mockLgpdConsent(page: Page, hasConsent: boolean): Promise<void> {
+  await page.route(`${BACKEND}/api/auth/lgpd-consent`, (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ success: true, hasConsent, consent: null }),
+    });
+  });
+}

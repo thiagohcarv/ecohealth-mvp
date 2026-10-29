@@ -17,8 +17,10 @@ test("LGPD + Cadastro: aceite, preenchimento e redirect para /verificar", async 
   const continuar = page.getByRole("button", { name: /Continuar/i });
   await expect(continuar).toBeDisabled();
 
-  // Marca o checkbox de aceite
-  await page.getByText("Li e concordo com a Política de Privacidade").click();
+  // Os DOIS aceites são obrigatórios: só LGPD ou só Termos não habilita
+  await page.getByRole("checkbox", { name: /Política de Privacidade/ }).click();
+  await expect(continuar).toBeDisabled();
+  await page.getByRole("checkbox", { name: /Termos de Uso/ }).click();
   await expect(continuar).toBeEnabled();
 
   // Clica em Continuar → seta eco_lgpd_pending, redireciona para /cadastro
@@ -32,7 +34,7 @@ test("LGPD + Cadastro: aceite, preenchimento e redirect para /verificar", async 
   await expect(page).toHaveURL(/\/cadastro/);
 
   // Preenche o formulário
-  await page.getByPlaceholder("Dr. João Silva").fill("Dr. Playwright Teste");
+  await page.getByPlaceholder("Seu nome completo").fill("Dr. Playwright Teste");
   await page.getByPlaceholder("000.000.000-00").fill("123.456.789-00");
   await page.getByPlaceholder("seuemail@exemplo.com").fill("playwright@ecohealth.com");
   await page.getByPlaceholder("123456").fill("99999");

@@ -101,6 +101,10 @@ export default function NovaConsultaPage() {
       });
 
       if ("error" in conRes) {
+        if (conRes.code === "LGPD_CONSENT_REQUIRED") {
+          router.push("/lgpd?next=/nova-consulta");
+          return;
+        }
         setErro(conRes.error ?? "Erro ao criar consulta.");
         setLoading(false);
         return;

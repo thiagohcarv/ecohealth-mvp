@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
+import { CURRENT_CONSENT_VERSION } from "../lib/consent";
 import { prisma } from "../lib/prisma";
 import { signToken, getTokenExpiry } from "../lib/jwt";
 import { authenticate, AuthRequest } from "../middleware/auth";
@@ -247,10 +248,25 @@ router.post("/logout", authenticate, (req: AuthRequest, res: Response) => {
 
 // ─── POST /api/auth/lgpd-consent ─────────────────────────────────────────────
 
+const lgpdConsentSchema = z.object({
+  acceptLgpd: z.literal(true),
+  acceptTerms: z.literal(true),
+});
+
 router.post("/lgpd-consent", authenticate, async (req: AuthRequest, res: Response) => {
   try {
+    // Aceite obrigatório e explícito dos DOIS itens — validado também no servidor
+    const parsed = lgpdConsentSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: "É necessário aceitar a Política de Privacidade (LGPD) e os Termos de Uso para continuar.",
+        code: "CONSENT_INCOMPLETE",
+      });
+    }
+
     const existing = await prisma.lgpdConsent.findFirst({
-      where: { userId: req.userId! },
+      where: { userId: req.userId!, version: CURRENT_CONSENT_VERSION },
+      select: { id: true, acceptedAt: true, version: true },
     });
     if (existing) {
       return res.json({ success: true, consent: existing, alreadyConsented: true });
@@ -268,7 +284,7 @@ router.post("/lgpd-consent", authenticate, async (req: AuthRequest, res: Respons
         userId: req.userId!,
         ipAddress: encryptField(ipAddress) ?? ipAddress,
         userAgent: encryptField(userAgent) ?? userAgent,
-        version: "1.0",
+        version: CURRENT_CONSENT_VERSION,
       },
     });
 
@@ -289,7 +305,7 @@ router.post("/lgpd-consent", authenticate, async (req: AuthRequest, res: Respons
 router.get("/lgpd-consent", authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const consent = await prisma.lgpdConsent.findFirst({
-      where: { userId: req.userId! },
+      where: { userId: req.userId!, version: CURRENT_CONSENT_VERSION },
       orderBy: { acceptedAt: "desc" },
       select: { id: true, acceptedAt: true, version: true },
     });

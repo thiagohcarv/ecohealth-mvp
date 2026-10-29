@@ -43,7 +43,7 @@ export default function CadastroPage() {
   const [apiError, setApiError] = useState("");
 
   useEffect(() => {
-    if (typeof window !== "undefined" && !localStorage.getItem("eco_lgpd_pending")) {
+    if (typeof window !== "undefined" && localStorage.getItem("eco_lgpd_pending") !== "2.0") {
       router.replace("/lgpd");
     }
   }, [router]);

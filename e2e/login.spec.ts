@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { BACKEND, mockConsultations } from "./helpers/auth";
+import { BACKEND, mockConsultations, mockLgpdConsent } from "./helpers/auth";
 
 /**
  * Teste 2 — Login
@@ -20,6 +20,9 @@ test("Login: preenche credenciais e redireciona para /dashboard", async ({ page 
       }),
     })
   );
+
+  // Aceite LGPD + Termos já registrado → segue para o dashboard
+  await mockLgpdConsent(page, true);
 
   // Mock do dashboard para evitar erros de rede após redirect
   await mockConsultations(page);

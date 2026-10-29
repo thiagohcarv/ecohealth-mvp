@@ -39,6 +39,13 @@ export default function LoginPage() {
     if (token && userId && nome) {
       setToken(token);
       setUser({ userId, nome });
+
+      // Aceite obrigatório (LGPD + Termos de Uso): sem ele, não entra no app
+      const consent = await api.get<{ hasConsent: boolean }>("/api/auth/lgpd-consent");
+      if (!("error" in consent) && !consent.data.hasConsent) {
+        router.push("/lgpd?next=/dashboard");
+        return;
+      }
       router.push("/dashboard");
     }
   }

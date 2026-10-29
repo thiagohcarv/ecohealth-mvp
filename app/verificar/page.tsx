@@ -65,8 +65,13 @@ export default function VerificarPage() {
       setUser({ userId, nome });
       clearPendingEmail();
 
-      if (typeof window !== "undefined" && localStorage.getItem("eco_lgpd_pending")) {
-        await api.post("/api/auth/lgpd-consent", {});
+      if (typeof window !== "undefined" && localStorage.getItem("eco_lgpd_pending") === "2.0") {
+        const consentRes = await api.post("/api/auth/lgpd-consent", { acceptLgpd: true, acceptTerms: true });
+        if ("error" in consentRes) {
+          // Não conseguiu registrar o aceite: volta para a tela de aceite
+          router.push("/lgpd?next=/dashboard");
+          return;
+        }
         localStorage.removeItem("eco_lgpd_pending");
       }
 
