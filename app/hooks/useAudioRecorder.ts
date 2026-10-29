@@ -196,12 +196,13 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
       setIsStopping(true);
 
       let finished = false;
-      let safety: ReturnType<typeof setTimeout> | undefined;
+      // Se o navegador não avisar que parou, finaliza mesmo assim (finish só roda depois, de forma assíncrona)
+      const safety = setTimeout(() => finish(), STOP_TIMEOUT_MS);
 
       const finish = () => {
         if (finished) return;
         finished = true;
-        if (safety) clearTimeout(safety);
+        clearTimeout(safety);
 
         // Normaliza o tipo (sem ";codecs=...") — o servidor e o Whisper esperam só o tipo base
         const rawType = recorder.mimeType || chunksRef.current[0]?.type || "audio/webm";
@@ -223,7 +224,6 @@ export function useAudioRecorder(): UseAudioRecorderReturn {
         resolve(blob);
       };
 
-      safety = setTimeout(finish, STOP_TIMEOUT_MS);
       recorder.onstop = finish;
 
       try {
