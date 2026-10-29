@@ -156,7 +156,7 @@ export default function DashboardPage() {
               <div key={c.day} className="flex-1 flex flex-col items-center gap-1">
                 <div className="w-full flex flex-col justify-end" style={{ height: "48px" }}>
                   <div
-                    className={`w-full rounded-t-lg transition-all ${i === 6 ? "bg-secondary-300" : i === 3 ? "bg-primary" : "bg-primary-100"}`}
+                    className={`w-full rounded-t-lg transition-all ${i === chart.length - 1 ? "bg-primary" : "bg-primary-100"}`}
                     style={{ height: `${Math.round((c.n / chartMax) * 48)}px`, minHeight: "4px" }}
                   />
                 </div>
