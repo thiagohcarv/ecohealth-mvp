@@ -34,7 +34,24 @@ const LIGHT_GRAY = "#F5F5F5";
 const BORDER = "#E0E0E0";
 
 function formatDate(d: Date): string {
-  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  return d.toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: "America/Sao_Paulo",
+  });
+}
+
+// A Helvetica padrão do PDF (WinAnsi) não tem estes símbolos; sem troca eles saem como lixo.
+const GLYPH_MAP: Record<string, string> = {
+  "≥": ">=", "≤": "<=", "→": "->", "←": "<-", "↑": "(aumento)", "↓": "(redução)",
+  "✓": "", "✔": "", "×": "x", "≈": "~", "≠": "!=", "−": "-", "‑": "-", "–": "-",
+  "µ": "µ", "\u00a0": " ", "\u200b": "", "\t": " ",
+};
+export function pdfSafe(input: string): string {
+  return input
+    .replace(/[≥≤→←↑↓✓✔×≈≠−‑–\u00a0\u200b\t]/g, (c) => GLYPH_MAP[c] ?? "")
+    .replace(/[^\x09\x0A\x0D\x20-\x7E\u00A0-\u00FF\u2018\u2019\u201C\u201D\u2022\u2026\u2014\u20AC]/gu, "?");
 }
 
 function formatDateTime(d: Date): string {
@@ -61,6 +78,11 @@ export async function generateSignedPdf(data: ConsultationData): Promise<Buffer>
         Creator: "EcoHealth MVP",
       },
     });
+
+    // Sanitiza TODO texto antes de desenhar (conteúdo vindo da IA pode ter símbolos fora da fonte)
+    const originalText = doc.text.bind(doc);
+    (doc as any).text = (t: any, ...args: any[]) =>
+      originalText(typeof t === "string" ? pdfSafe(t) : t, ...args);
 
     const chunks: Buffer[] = [];
     doc.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -135,7 +157,10 @@ export async function generateSignedPdf(data: ConsultationData): Promise<Buffer>
       .fontSize(14)
       .font("Helvetica-Bold")
       .fillColor(TEXT)
-      .text("REGISTRO CLÍNICO — NOTA SOAP", { align: "center" });
+      .text("REGISTRO CLÍNICO — NOTA SOAP", doc.page.margins.left, doc.y, {
+        width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
+        align: "center",
+      });
 
     doc.moveDown(0.4);
 
@@ -166,24 +191,25 @@ export async function generateSignedPdf(data: ConsultationData): Promise<Buffer>
     const colW = pageWidth / 3;
     const rowY = doc.y;
 
-    function infoCell(label: string, value: string, x: number, y: number, width: number) {
+    // Desenha rótulo + valor (com quebra de linha) e devolve a altura total usada
+    function infoCell(label: string, value: string, x: number, y: number, width: number): number {
       doc.fontSize(7).font("Helvetica").fillColor("#666666").text(label, x, y, { width, lineBreak: false });
-      doc
-        .fontSize(9)
-        .font("Helvetica-Bold")
-        .fillColor(TEXT)
-        .text(value || "—", x, y + 10, { width, lineBreak: false });
+      doc.fontSize(9).font("Helvetica-Bold").fillColor(TEXT);
+      const text = value || "—";
+      const h = doc.heightOfString(text, { width });
+      doc.text(text, x, y + 10, { width });
+      return 10 + h;
     }
 
-    infoCell("Paciente", data.patient.name, doc.page.margins.left, rowY, colW - 10);
-    infoCell(
+    const h1 = infoCell("Paciente", data.patient.name, doc.page.margins.left, rowY, colW - 10);
+    const h2 = infoCell(
       "Data de Nascimento",
       data.patient.dateOfBirth ? formatDate(data.patient.dateOfBirth) : "—",
       doc.page.margins.left + colW,
       rowY,
       colW - 10
     );
-    infoCell(
+    const h3 = infoCell(
       "Data da Consulta",
       formatDate(data.date),
       doc.page.margins.left + colW * 2,
@@ -191,11 +217,11 @@ export async function generateSignedPdf(data: ConsultationData): Promise<Buffer>
       colW
     );
 
-    doc.y = rowY + 30;
+    doc.y = rowY + Math.max(h1, h2, h3) + 10;
 
     if (data.chiefComplaint) {
-      infoCell("Queixa Principal", data.chiefComplaint, doc.page.margins.left, doc.y, pageWidth);
-      doc.y += 28;
+      const hq = infoCell("Queixa Principal", data.chiefComplaint, doc.page.margins.left, doc.y, pageWidth);
+      doc.y += hq + 12;
     }
 
     doc
@@ -403,7 +429,7 @@ export async function generateSignedPdf(data: ConsultationData): Promise<Buffer>
       .fontSize(8)
       .font("Helvetica-Bold")
       .fillColor(PRIMARY)
-      .text("✓ Assinado digitalmente (mock ICP-Brasil)", doc.page.margins.left + 8, footerY + 10, {
+      .text("Assinado digitalmente (mock ICP-Brasil)", doc.page.margins.left + 8, footerY + 10, {
         width: pageWidth - 16,
         align: "center",
       });

@@ -14,10 +14,11 @@ import { generateSignedPdf, savePdf } from "../services/pdfSignerService";
 import { encryptField, decryptField } from "../lib/crypto";
 import { LOAD_TEST_MODE } from "../lib/loadTestMode";
 
-// 10 IA calls / min per IP — protects OpenAI quota (raised under LOAD_TEST_MODE)
+// 10 IA calls / min POR MÉDICO (não por IP: várias pessoas podem compartilhar a mesma rede) — protects OpenAI quota (raised under LOAD_TEST_MODE)
 const iaLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: LOAD_TEST_MODE ? 100_000 : 10,
+  keyGenerator: (req) => (req as AuthRequest).userId ?? req.ip ?? "unknown",
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Limite de requisições de IA excedido. Tente em 1 minuto.", code: "AI_RATE_LIMIT" },

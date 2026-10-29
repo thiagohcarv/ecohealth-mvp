@@ -57,7 +57,6 @@ const CID_TOP = [
 
 export default function PerfilPage() {
   const user = getUser();
-  const [editando, setEditando] = useState(false);
   const [me, setMe] = useState<MeResponse["user"] | null>(null);
   const [resumo, setResumo] = useState<{ total: number; concluidas: number; assinadas: number; soaps: number } | null>(null);
   const [plano, setPlano] = useState<{ plan: string; daysRemaining: number; isExpired: boolean } | null>(null);
@@ -147,19 +146,8 @@ export default function PerfilPage() {
                 <span className="text-[10px] bg-primary-50 text-primary font-medium rounded-full px-2 py-0.5">
                   Clínica Geral
                 </span>
-                <span className="text-[10px] bg-secondary-100 text-secondary-400 rounded-full px-2 py-0.5">
-                  São Paulo · SP
-                </span>
               </div>
             </div>
-            <button
-              onClick={() => setEditando(!editando)}
-              className={`h-8 px-3 rounded-xl text-xs font-medium transition-colors ${
-                editando ? "bg-primary text-white" : "bg-primary-100 text-primary"
-              }`}
-            >
-              {editando ? "Salvar" : "Editar"}
-            </button>
           </div>
 
           {/* Badge trial */}

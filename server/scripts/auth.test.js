@@ -96,9 +96,21 @@ const setEnv = (e) => { for (const k of ["NODE_ENV", "SIGNUP_ALLOWLIST"]) delete
   r = await call("PATCH", "/api/consultations/abc/status", { status: "COMPLETED" });
   check("sem token: 401", r.status === 401, JSON.stringify(r));
 
+  console.log("── Limite da IA por médico (não por IP) ──");
+  const { signToken } = require(SRC + "/lib/jwt.ts");
+  const tA = signToken("uA"), tB = signToken("uB");
+  let ultimo;
+  for (let i = 0; i < 10; i++) ultimo = await call("POST", "/api/consultations/x/generate-soap", {}, tA);
+  check("médico A: as 10 primeiras chamadas passam pelo limite (404 = chegou à consulta)", ultimo.status === 404, JSON.stringify(ultimo));
+  r = await call("POST", "/api/consultations/x/generate-soap", {}, tA);
+  check("médico A: a 11ª chamada no mesmo minuto é limitada (429)", r.status === 429, JSON.stringify(r));
+  r = await call("POST", "/api/consultations/x/generate-soap", {}, tB);
+  check("médico B, MESMO IP, não é afetado pelo limite do A (404, não 429)", r.status === 404, JSON.stringify(r));
+
   console.log("── Garantias estáticas (infra) ──");
   const idx = fs.readFileSync(SRC + "/index.ts", "utf8");
   check("trust proxy ligado (limites e IP por usuário, não do proxy)", /app\.set\("trust proxy", 1\)/.test(idx));
+  check("limite geral por IP compatível com uso real (1000/15min)", /LOAD_TEST_MODE \? 100_000 : 1000/.test(idx));
   check("documentação da API fechada em produção", /NODE_ENV"\] !== "production" \|\| process\.env\["ENABLE_DOCS"\]/.test(idx));
   const srcs = ["routes/auth.ts", "routes/consultations.ts", "routes/patients.ts"].map((f) => fs.readFileSync(SRC + "/" + f, "utf8")).join("\n");
   check("IP vem do Express (req.ip), não de cabeçalho forjável", !/x-forwarded-for/i.test(srcs));

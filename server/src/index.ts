@@ -75,11 +75,11 @@ app.use((_req, res, next) => {
 });
 
 // ─── Rate Limiting ────────────────────────────────────────────────────────────
-// General: 100 req / 15 min per IP (raised under LOAD_TEST_MODE — see lib/loadTestMode.ts)
+// General: 1000 req / 15 min per IP (cada tela faz várias chamadas; não bloquear uso normal) (raised under LOAD_TEST_MODE — see lib/loadTestMode.ts)
 app.use(
   rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: LOAD_TEST_MODE ? 100_000 : 100,
+    max: LOAD_TEST_MODE ? 100_000 : 1000,
     standardHeaders: true,
     legacyHeaders: false,
     skip: (req) => req.path === "/health",
@@ -87,10 +87,10 @@ app.use(
   })
 );
 
-// Auth: 5 attempts / 15 min per IP — brute-force protection (raised under LOAD_TEST_MODE)
+// Auth: 10 failed attempts / 15 min per IP (vários usuários podem estar atrás do mesmo IP) — brute-force protection (raised under LOAD_TEST_MODE)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: LOAD_TEST_MODE ? 100_000 : 5,
+  max: LOAD_TEST_MODE ? 100_000 : 10,
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: true,
