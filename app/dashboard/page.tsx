@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BottomNav } from "@/components/ui/BottomNav";
 import { MobileScreen } from "@/components/layout/MobileScreen";
 import { api, type ConsultationListResponse, type ConsultationItem } from "@/lib/api";
@@ -17,21 +17,10 @@ interface Consulta {
   hora: string;
   status: Status;
   duracao?: string;
+  iso: string;
+  duracaoSeg?: number;
+  temSoap: boolean;
 }
-
-const MOCK: Consulta[] = [
-  { id: "1", paciente: "João da Silva",    queixa: "Cefaleia tensional",   data: "04/06/2026", hora: "09:00", status: "COMPLETED", duracao: "18min" },
-  { id: "2", paciente: "Maria Oliveira",   queixa: "Diabetes Tipo 2",     data: "04/06/2026", hora: "10:30", status: "COMPLETED", duracao: "22min" },
-  { id: "3", paciente: "Carlos Santos",    queixa: "Lombalgia mecânica",  data: "04/06/2026", hora: "11:45", status: "PROCESSING" },
-  { id: "4", paciente: "Ana Fernandes",    queixa: "Asma brônquica",      data: "04/06/2026", hora: "14:00", status: "PENDING" },
-  { id: "5", paciente: "Pedro Rodrigues",  queixa: "HAS estágio 1",       data: "04/06/2026", hora: "15:00", status: "COMPLETED", duracao: "14min" },
-];
-
-const CHART = [
-  { day: "Seg", n: 4 }, { day: "Ter", n: 7 }, { day: "Qua", n: 5 },
-  { day: "Qui", n: 9 }, { day: "Sex", n: 6 }, { day: "Sáb", n: 3 }, { day: "Dom", n: 1 },
-];
-const CHART_MAX = Math.max(...CHART.map((c) => c.n));
 
 const STATUS_CFG: Record<Status, { dot: string; text: string; label: string }> = {
   COMPLETED:  { dot: "bg-green-500",  text: "text-green-700",  label: "Concluída"    },
@@ -51,28 +40,51 @@ function toConsulta(item: ConsultationItem): Consulta {
     data: d.toLocaleDateString("pt-BR"),
     hora: d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
     status: item.status as Status,
+    iso: item.date,
+    duracaoSeg: item.audioRecording?.durationSec ?? undefined,
+    duracao: item.audioRecording?.durationSec
+      ? `${Math.max(1, Math.round(item.audioRecording.durationSec / 60))}min`
+      : undefined,
+    temSoap: item.soapNote !== null,
   };
 }
 
+const WEEKDAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+
+/** Consultas por dia nos últimos 7 dias (dados reais). */
+function buildChart(consultas: Consulta[]): { day: string; n: number }[] {
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - (6 - i));
+    return {
+      day: WEEKDAYS[d.getDay()] ?? "",
+      n: consultas.filter((c) => new Date(c.iso).toDateString() === d.toDateString()).length,
+    };
+  });
+}
+
 export default function DashboardPage() {
-  const [consultas, setConsultas] = useState<Consulta[]>(MOCK);
+  const [consultas, setConsultas] = useState<Consulta[]>([]);
+  const [apiTotal, setApiTotal] = useState<number | null>(null);
   const [offline, setOffline] = useState(false);
   const [firstName, setFirstName] = useState("Doutor(a)");
 
   useEffect(() => {
     setFirstName(getUser()?.nome?.split(" ")[0] ?? "Doutor(a)");
-    api.get<ConsultationListResponse>("/api/consultations").then((r) => {
+    api.get<ConsultationListResponse>("/api/consultations?limit=50").then((r) => {
       if (r.error || !r.data) { setOffline(true); return; }
       setConsultas(r.data.consultations.map(toConsulta));
+      setApiTotal(r.data.total);
     });
   }, []);
 
-  const hoje   = consultas.filter((c) => c.status === "COMPLETED").length;
-  const total  = consultas.length;
-  const horasSalvas = consultas.filter((c) => c.duracao).reduce((acc, c) => {
-    const min = parseInt(c.duracao ?? "0");
-    return acc + min * 0.4;
-  }, 0);
+  const hoje = consultas.filter((c) => new Date(c.iso).toDateString() === new Date().toDateString()).length;
+  const total = apiTotal ?? consultas.length;
+  const minGravados = Math.round(consultas.reduce((acc, c) => acc + (c.duracaoSeg ?? 0), 0) / 60);
+  const soaps = consultas.filter((c) => c.temSoap).length;
+  const chart = useMemo(() => buildChart(consultas), [consultas]);
+  const chartMax = Math.max(1, ...chart.map((c) => c.n));
   const recentes = consultas.slice(0, 5);
 
   return (
@@ -104,27 +116,27 @@ export default function DashboardPage() {
           <StatCard
             label="Consultas hoje"
             value={String(hoje)}
-            sub="concluídas"
+            sub="realizadas"
             color="bg-primary text-white"
             icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/></svg>}
           />
           <StatCard
-            label="Total sprint"
+            label="Total de consultas"
             value={String(total)}
             sub="consultas"
             color="bg-secondary-100"
             icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2260FF" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>}
           />
           <StatCard
-            label="Tempo poupado"
-            value={`${horasSalvas.toFixed(0)}min`}
-            sub="vs. digitação"
+            label="Tempo gravado"
+            value={`${minGravados}min`}
+            sub="em consultas"
             color="bg-secondary-100"
             icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2260FF" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>}
           />
           <StatCard
             label="SOAPs gerados"
-            value={String(hoje)}
+            value={String(soaps)}
             sub="com IA"
             color="bg-primary-50"
             icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2260FF" strokeWidth="2"><path d="M12 2a3 3 0 00-3 3v8a3 3 0 006 0V5a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/></svg>}
@@ -136,16 +148,16 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs font-semibold text-secondary-500">Consultas — últimos 7 dias</p>
             <span className="text-[10px] text-secondary-400 bg-white rounded-full px-2 py-0.5">
-              {CHART.reduce((a, c) => a + c.n, 0)} total
+              {chart.reduce((a, c) => a + c.n, 0)} total
             </span>
           </div>
           <div className="flex items-end justify-between gap-1 h-16">
-            {CHART.map((c, i) => (
+            {chart.map((c, i) => (
               <div key={c.day} className="flex-1 flex flex-col items-center gap-1">
                 <div className="w-full flex flex-col justify-end" style={{ height: "48px" }}>
                   <div
                     className={`w-full rounded-t-lg transition-all ${i === 6 ? "bg-secondary-300" : i === 3 ? "bg-primary" : "bg-primary-100"}`}
-                    style={{ height: `${Math.round((c.n / CHART_MAX) * 48)}px`, minHeight: "4px" }}
+                    style={{ height: `${Math.round((c.n / chartMax) * 48)}px`, minHeight: "4px" }}
                   />
                 </div>
                 <span className="text-[9px] text-secondary-400">{c.day}</span>

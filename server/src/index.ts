@@ -21,6 +21,10 @@ if (LOAD_TEST_MODE) {
 }
 
 const app = express();
+
+// Atrás do proxy do Railway: sem isto TODOS os usuários parecem ter o mesmo IP
+// (limites de requisição compartilhados e IP de auditoria falso).
+app.set("trust proxy", 1);
 const PORT = Number(process.env["PORT"] ?? 3001);
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
@@ -102,11 +106,14 @@ app.get("/health", (_req, res) => {
 });
 
 // ─── Docs ─────────────────────────────────────────────────────────────────────
-app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
-  customSiteTitle: "EcoHealth API Docs",
-  swaggerOptions: { persistAuthorization: true },
-}));
-app.get("/api/docs.json", (_req, res) => res.json(swaggerSpec));
+// Documentação da API: só fora de produção (ou com ENABLE_DOCS=true) — não expor o mapa da API
+if (process.env["NODE_ENV"] !== "production" || process.env["ENABLE_DOCS"] === "true") {
+  app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+    customSiteTitle: "EcoHealth API Docs",
+    swaggerOptions: { persistAuthorization: true },
+  }));
+  app.get("/api/docs.json", (_req, res) => res.json(swaggerSpec));
+}
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 app.use("/api/auth", authLimiter, authRouter);

@@ -72,6 +72,12 @@ const webhookSchema = z.object({
 });
 
 router.post("/webhook", async (req: Request, res: Response) => {
+  // Sem verificação de assinatura do Stripe não dá para confiar no evento (qualquer pessoa
+  // poderia ativar o plano Pro de graça). Desativado em produção até a integração real.
+  if (process.env["NODE_ENV"] === "production") {
+    return res.status(501).json({ error: "Webhook desativado até a integração real do Stripe.", code: "WEBHOOK_DISABLED" });
+  }
+
   try {
     const parse = webhookSchema.safeParse(req.body);
     if (!parse.success) {

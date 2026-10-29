@@ -61,12 +61,7 @@ function paramId(req: AuthRequest): string | null {
 }
 
 function getIp(req: AuthRequest): string {
-  const fwd = req.headers["x-forwarded-for"];
-  return (
-    (typeof fwd === "string" ? fwd.split(",")[0]?.trim() : undefined) ??
-    req.socket.remoteAddress ??
-    "unknown"
-  );
+  return req.ip ?? "unknown";
 }
 
 async function logAudit(params: {
@@ -268,7 +263,8 @@ router.post("/", authenticate, lgpdRequired, async (req: AuthRequest, res: Respo
 // ─── PATCH /api/consultations/:id/status ─────────────────────────────────────
 
 const statusSchema = z.object({
-  status: z.enum(["PENDING", "RECORDING", "PROCESSING", "COMPLETED", "FAILED", "SIGNED"]),
+  // SIGNED só é definido pela rota de assinatura — nunca manualmente
+  status: z.enum(["PENDING", "RECORDING", "PROCESSING", "COMPLETED", "FAILED"]),
 });
 
 router.patch("/:id/status", authenticate, async (req: AuthRequest, res: Response) => {

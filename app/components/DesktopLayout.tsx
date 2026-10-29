@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { EcoHealthLogo } from "@/components/EcoHealthLogo";
-import { clearAuth, getUser, type StoredUser } from "@/lib/auth";
+import { clearAuth, getToken, getUser, type StoredUser } from "@/lib/auth";
 
 // Páginas sem sidebar (autenticação / públicas)
 const PUBLIC_PATHS = ["/", "/login", "/cadastro", "/verificar", "/lgpd"];
@@ -87,8 +87,14 @@ export function DesktopLayout({ children }: { children: React.ReactNode }) {
   const isPublic = PUBLIC_PATHS.includes(pathname);
 
   useEffect(() => {
-    if (!isPublic) setUser(getUser());
-  }, [pathname, isPublic]);
+    if (isPublic) return;
+    // Páginas internas exigem sessão: sem token, volta ao login
+    if (!getToken()) {
+      router.replace("/login");
+      return;
+    }
+    setUser(getUser());
+  }, [pathname, isPublic, router]);
 
   function handleLogout() {
     clearAuth();

@@ -1,4 +1,15 @@
+import { clearAuth } from "./auth";
+
 const API_URL = process.env["NEXT_PUBLIC_API_URL"] ?? "http://localhost:3001";
+
+const PUBLIC_PATHS = ["/", "/login", "/cadastro", "/verificar", "/lgpd"];
+
+/** Token expirado/revogado (401 com sessão ativa): limpa a sessão e volta ao login. */
+function handleUnauthorized(status: number, hadToken: boolean): void {
+  if (status !== 401 || !hadToken || typeof window === "undefined") return;
+  clearAuth();
+  if (!PUBLIC_PATHS.includes(window.location.pathname)) window.location.replace("/login");
+}
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -37,6 +48,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<ApiResu
     const json = (await res.json()) as Record<string, unknown>;
 
     if (!res.ok) {
+      handleUnauthorized(res.status, !!token);
       return {
         error: (json["error"] as string) ?? "Erro desconhecido",
         code: (json["code"] as string) ?? "UNKNOWN_ERROR",
@@ -59,6 +71,7 @@ async function requestFormData<T>(path: string, formData: FormData, method = "PA
     const res = await fetch(`${API_URL}${path}`, { method, headers, body: formData });
     const json = (await res.json()) as Record<string, unknown>;
     if (!res.ok) {
+      handleUnauthorized(res.status, !!token);
       return {
         error: (json["error"] as string) ?? "Erro desconhecido",
         code: (json["code"] as string) ?? "UNKNOWN_ERROR",
@@ -105,7 +118,7 @@ export interface ConsultationListResponse {
 export interface ConsultationItem {
   id: string;
   date: string;
-  status: "PENDING" | "RECORDING" | "PROCESSING" | "COMPLETED" | "FAILED";
+  status: "PENDING" | "RECORDING" | "PROCESSING" | "COMPLETED" | "FAILED" | "SIGNED";
   chiefComplaint: string | null;
   patient: { id: string; name: string; cpf: string | null };
   soapNote: { id: string; assessment: string; icd10Codes: string[] } | null;

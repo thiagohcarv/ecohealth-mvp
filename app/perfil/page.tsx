@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { MobileScreen } from "@/components/layout/MobileScreen";
 import { BottomNav } from "@/components/ui/BottomNav";
 import { getUser } from "@/lib/auth";
+import { api, type ConsultationListResponse, type MeResponse } from "@/lib/api";
 
 interface StatItem {
   label: string;
@@ -57,31 +58,60 @@ const CID_TOP = [
 export default function PerfilPage() {
   const user = getUser();
   const [editando, setEditando] = useState(false);
-  const nome = user?.nome ?? "Dr. Médico Especialista";
-  const crm  = user?.crm  ?? "CRM/SP-123456";
+  const [me, setMe] = useState<MeResponse["user"] | null>(null);
+  const [resumo, setResumo] = useState<{ total: number; concluidas: number; assinadas: number; soaps: number } | null>(null);
+  const [plano, setPlano] = useState<{ plan: string; daysRemaining: number; isExpired: boolean } | null>(null);
+
+  useEffect(() => {
+    api.get<MeResponse>("/api/auth/me").then((r) => { if (!r.error && r.data) setMe(r.data.user); });
+    api.get<ConsultationListResponse>("/api/consultations?limit=50").then((r) => {
+      if (r.error || !r.data) return;
+      const c = r.data.consultations;
+      setResumo({
+        total: r.data.total,
+        concluidas: c.filter((x) => x.status === "COMPLETED" || x.status === "SIGNED").length,
+        assinadas: c.filter((x) => x.status === "SIGNED").length,
+        soaps: c.filter((x) => x.soapNote !== null).length,
+      });
+    });
+    api.get<{ plan: string; daysRemaining: number; isExpired: boolean }>("/api/billing/status").then((r) => {
+      if (!r.error && r.data) setPlano(r.data);
+    });
+  }, []);
+
+  const nome = me?.name ?? user?.nome ?? "Médico(a)";
+  const crm = me?.crm ?? user?.crm ?? "";
+  const planoLabel = !plano
+    ? "Plano Trial"
+    : plano.plan === "pro"
+      ? "Plano Pro"
+      : plano.isExpired
+        ? "Trial expirado"
+        : `Plano Trial · ${plano.daysRemaining} dias restantes`;
+  const v = (n: number | undefined) => (n === undefined ? "—" : String(n));
 
   const STATS: StatItem[] = [
     {
       label: "Total de consultas",
-      value: "127",
+      value: v(resumo?.total),
       color: "bg-primary-50",
       icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2260FF" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>,
     },
     {
-      label: "Horas economizadas",
-      value: "50h",
+      label: "Concluídas",
+      value: v(resumo?.concluidas),
       color: "bg-green-50",
       icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
     },
     {
       label: "SOAPs gerados",
-      value: "119",
+      value: v(resumo?.soaps),
       color: "bg-purple-50",
       icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9333ea" strokeWidth="2"><path d="M12 2a3 3 0 00-3 3v8a3 3 0 006 0V5a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/></svg>,
     },
     {
-      label: "Acurácia IA",
-      value: "94%",
+      label: "Assinadas",
+      value: v(resumo?.assinadas),
       color: "bg-amber-50",
       icon: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>,
     },
@@ -137,7 +167,7 @@ export default function PerfilPage() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2260FF" strokeWidth="2">
               <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
             </svg>
-            <span className="text-xs text-primary font-medium">Plano Trial · 12 dias restantes</span>
+            <span className="text-xs text-primary font-medium">{planoLabel}</span>
             <Link href="/configuracoes" className="ml-auto text-[11px] text-primary font-semibold underline underline-offset-2">
               Upgrade
             </Link>

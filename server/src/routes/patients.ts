@@ -4,8 +4,7 @@ import { prisma } from "../lib/prisma";
 import { authenticate, AuthRequest } from "../middleware/auth";
 
 function getIp(req: AuthRequest): string {
-  const fwd = req.headers["x-forwarded-for"];
-  return (typeof fwd === "string" ? fwd.split(",")[0]?.trim() : undefined) ?? req.socket.remoteAddress ?? "unknown";
+  return req.ip ?? "unknown";
 }
 
 const router = Router();

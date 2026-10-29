@@ -25,6 +25,22 @@ function sanitizeNome(nome: string): string {
   return nome.trim().replace(/^dr\.?\(?a?\)?\.?\s+/i, "").trim();
 }
 
+/**
+ * Cadastro por convite (alpha). SIGNUP_ALLOWLIST = e-mails e/ou domínios separados por vírgula
+ * (ex.: "medico@gmail.com,@clinica.com.br"). Em PRODUÇÃO, sem a variável, o cadastro fica FECHADO.
+ * Fora de produção (desenvolvimento) o cadastro é livre.
+ */
+function signupAllowed(email: string): boolean {
+  const raw = process.env["SIGNUP_ALLOWLIST"];
+  if (!raw) return process.env["NODE_ENV"] !== "production";
+  const e = email.trim().toLowerCase();
+  return raw
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+    .some((item) => (item.startsWith("@") ? e.endsWith(item) : e === item));
+}
+
 function generateOtp(): string {
   // Mock: fixo para alpha. Em produção: Math.floor(100000 + Math.random() * 900000).toString()
   return "123456";
@@ -53,6 +69,13 @@ router.post("/register", async (req: Request, res: Response) => {
   }
 
   const { email, senha, nome, crm, uf, cpf, telefone } = parse.data;
+
+  if (!signupAllowed(email)) {
+    return res.status(403).json({
+      error: "Cadastro disponível apenas por convite durante o alpha. Peça seu acesso à equipe EcoHealth.",
+      code: "SIGNUP_BY_INVITE",
+    });
+  }
   const crmFormatado = normalizeCrm(uf, crm);
   const nomeSanitizado = sanitizeNome(nome);
 
@@ -120,10 +143,7 @@ router.post("/login", async (req: Request, res: Response) => {
 
   const { email, senha } = parse.data;
 
-  const remoteIp =
-    (typeof req.headers["x-forwarded-for"] === "string"
-      ? req.headers["x-forwarded-for"].split(",")[0]?.trim()
-      : undefined) ?? req.socket.remoteAddress ?? "unknown";
+  const remoteIp = req.ip ?? "unknown";
 
   try {
     const user = await prisma.user.findUnique({ where: { email } });
@@ -142,6 +162,13 @@ router.post("/login", async (req: Request, res: Response) => {
         data: { userId: user.id, action: "LOGIN_FAILED", resource: "auth", ipAddress: remoteIp, success: false, metadata: { reason: "wrong_password" } },
       }).catch(() => {});
       return res.status(401).json({ error: "Email ou senha inválidos", code: "INVALID_CREDENTIALS" });
+    }
+
+    if (!user.isVerified) {
+      return res.status(403).json({
+        error: "Conta ainda não verificada. Conclua a verificação do código para entrar.",
+        code: "NOT_VERIFIED",
+      });
     }
 
     const token = signToken(user.id);
@@ -193,6 +220,16 @@ router.post("/verify-otp", async (req: Request, res: Response) => {
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
       return res.status(404).json({ error: "Usuário não encontrado", code: "USER_NOT_FOUND" });
+    }
+
+    // Conta já verificada: NUNCA entregar token aqui (antes isto permitia entrar em qualquer
+    // conta só com o e-mail + código fixo, sem senha). Quem já verificou entra por /login.
+    if (user.isVerified) {
+      otpStore.delete(email);
+      return res.status(409).json({
+        error: "Esta conta já foi verificada. Entre com seu e-mail e senha.",
+        code: "ALREADY_VERIFIED",
+      });
     }
 
     // Marca conta como verificada e apaga OTP
@@ -272,11 +309,7 @@ router.post("/lgpd-consent", authenticate, async (req: AuthRequest, res: Respons
       return res.json({ success: true, consent: existing, alreadyConsented: true });
     }
 
-    const forwarded = req.headers["x-forwarded-for"];
-    const ipAddress =
-      (typeof forwarded === "string" ? forwarded.split(",")[0]?.trim() : undefined) ??
-      req.socket.remoteAddress ??
-      "unknown";
+    const ipAddress = req.ip ?? "unknown";
     const userAgent = req.headers["user-agent"] ?? "unknown";
 
     const consent = await prisma.lgpdConsent.create({
