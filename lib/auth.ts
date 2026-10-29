@@ -1,3 +1,5 @@
+import { purgeClinicalCache } from "./privacy";
+
 const TOKEN_KEY = "eco_token";
 const USER_KEY = "eco_user";
 const PENDING_EMAIL_KEY = "eco_pending_email";
@@ -16,10 +18,12 @@ export function getToken(): string | null {
 }
 
 export function setToken(token: string): void {
+  purgeClinicalCache();
   localStorage.setItem(TOKEN_KEY, token);
 }
 
 export function clearAuth(): void {
+  purgeClinicalCache();
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
   localStorage.removeItem(PENDING_EMAIL_KEY);

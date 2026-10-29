@@ -4,7 +4,7 @@ import { useCallback } from "react";
 import { useAudioRecorder } from "@/app/hooks/useAudioRecorder";
 import { useWhisper } from "@/app/hooks/useWhisper";
 
-type RecorderState = "default" | "recording" | "sending" | "done";
+type RecorderState = "default" | "recording" | "stopping" | "sending" | "done";
 
 interface Props {
   consultationId: string;
@@ -24,6 +24,7 @@ export function AudioRecorder({ consultationId, onTranscriptionComplete }: Props
   const state: RecorderState = (() => {
     if (whisper.status === "done") return "done";
     if (whisper.status === "uploading") return "sending";
+    if (recorder.isStopping) return "stopping";
     if (recorder.isRecording) return "recording";
     return "default";
   })();
@@ -33,6 +34,7 @@ export function AudioRecorder({ consultationId, onTranscriptionComplete }: Props
   }, [recorder]);
 
   const handleStop = useCallback(async () => {
+    if (recorder.isStopping) return; // ignora clique duplo
     const blob = await recorder.stopRecording();
     if (!blob) return;
 
@@ -95,7 +97,7 @@ export function AudioRecorder({ consultationId, onTranscriptionComplete }: Props
           </button>
         )}
 
-        {state === "sending" && (
+        {(state === "sending" || state === "stopping") && (
           <div className="w-[162px] h-[162px] rounded-full bg-primary-50 border-2 border-primary flex flex-col items-center justify-center gap-2">
             <svg className="animate-spin w-10 h-10" viewBox="0 0 24 24" fill="none">
               <circle cx="12" cy="12" r="10" stroke="#2260FF" strokeWidth="3" strokeOpacity="0.2" />
@@ -127,6 +129,7 @@ export function AudioRecorder({ consultationId, onTranscriptionComplete }: Props
             Gravando...
           </span>
         )}
+        {state === "stopping" && "Finalizando gravação..."}
         {state === "sending" && "Enviando para transcrição..."}
         {state === "done" && "Transcrição concluída"}
       </p>
@@ -170,20 +173,13 @@ export function AudioRecorder({ consultationId, onTranscriptionComplete }: Props
         </div>
       )}
 
-      {/* Transcrição (estado done) */}
-      {state === "done" && whisper.transcription && (
+      {/* Aviso de transcrição simulada (o texto é exibido e editado na tela de gravação) */}
+      {state === "done" && whisper.simulated && (
         <div className="w-full px-6 mb-4 animate-fade-in">
-          <div className="bg-secondary-100 rounded-2xl p-4 max-h-48 overflow-y-auto">
-            <p className="text-xs font-medium text-secondary-400 mb-2">Transcrição</p>
-            <p className="text-sm font-inter text-secondary-500 leading-relaxed whitespace-pre-wrap">
-              {whisper.transcription}
-            </p>
+          <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 text-xs text-amber-800 font-inter leading-snug">
+            <strong>TRANSCRIÇÃO SIMULADA</strong> — este texto é fictício e <strong>não corresponde ao áudio gravado</strong>.
+            Não use em atendimento real.
           </div>
-          {whisper.duration !== null && whisper.duration > 0 && (
-            <p className="text-xs text-secondary-400 mt-2 text-right">
-              Duração: {Math.round(whisper.duration)}s
-            </p>
-          )}
         </div>
       )}
     </div>

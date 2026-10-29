@@ -1,4 +1,5 @@
 import https from "https";
+import { aiMockAllowed, AiConfigError } from "../lib/aiMode";
 
 export interface SoapNoteResult {
   subjective: string;
@@ -17,7 +18,9 @@ export interface PatientData {
 }
 
 interface GptResponse {
-  choices?: Array<{ message?: { content?: string } }>;
+  choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
+  id?: string;
+  model?: string;
   error?: { message: string; type: string; code: string };
   usage?: { prompt_tokens: number; completion_tokens: number };
 }
@@ -45,7 +48,7 @@ function getMockSoapNote(transcription: string): SoapNoteResult {
       icd10Codes: ["G44.2"],
       confidence: 0.93,
       model: "mock",
-      rawJson: { source: "mock", transcriptionPreview: transcription.slice(0, 80) },
+      rawJson: { source: "mock" },
     };
   }
 
@@ -62,7 +65,7 @@ function getMockSoapNote(transcription: string): SoapNoteResult {
       icd10Codes: ["M54.5"],
       confidence: 0.90,
       model: "mock",
-      rawJson: { source: "mock", transcriptionPreview: transcription.slice(0, 80) },
+      rawJson: { source: "mock" },
     };
   }
 
@@ -79,7 +82,7 @@ function getMockSoapNote(transcription: string): SoapNoteResult {
       icd10Codes: ["J20.9"],
       confidence: 0.87,
       model: "mock",
-      rawJson: { source: "mock", transcriptionPreview: transcription.slice(0, 80) },
+      rawJson: { source: "mock" },
     };
   }
 
@@ -92,7 +95,7 @@ function getMockSoapNote(transcription: string): SoapNoteResult {
     icd10Codes: ["Z00.0"],
     confidence: 0.72,
     model: "mock",
-    rawJson: { source: "mock", transcriptionPreview: transcription.slice(0, 80) },
+    rawJson: { source: "mock" },
   };
 }
 
@@ -106,7 +109,17 @@ async function callGPT4oAPI(
       {
         role: "system",
         content:
-          "Você é um assistente médico especializado em documentação clínica brasileira. Gere notas SOAP estruturadas a partir de transcrições de consultas. Responda APENAS com JSON válido, sem markdown ou texto adicional.",
+          [
+          "Você é um assistente de documentação clínica para médicos brasileiros. Gere uma nota SOAP a partir da transcrição de uma consulta.",
+          "REGRAS OBRIGATÓRIAS:",
+          "1) Use SOMENTE informações presentes na transcrição. NUNCA invente sintomas, sinais vitais, achados de exame físico, medicamentos, doses, exames ou diagnósticos.",
+          "2) Se uma seção não tiver informação na transcrição, escreva exatamente: Não informado na consulta.",
+          "3) A transcrição não identifica quem está falando; infira médico e paciente pelo contexto e, havendo dúvida, não atribua a fala.",
+          "4) Em 'assessment', inclua apenas hipóteses ou diagnósticos mencionados pelo médico ou que decorram diretamente do que foi dito, indicando 'hipótese' quando não confirmados.",
+          "5) 'icd10Codes': no máximo 3 códigos CID-10 compatíveis com a avaliação; lista vazia se não houver base.",
+          "6) 'confidence': número de 0 a 1 que reflete quão completa e clara é a transcrição (valor baixo se houver pouca informação).",
+          "Responda APENAS com JSON válido, sem markdown ou texto adicional.",
+        ].join("\n"),
       },
       {
         role: "user",
@@ -127,7 +140,7 @@ async function callGPT4oAPI(
       messages,
       temperature: 0.2,
       response_format: { type: "json_object" },
-      max_tokens: 1000,
+      max_tokens: 2500,
     });
 
     const options: https.RequestOptions = {
@@ -153,6 +166,11 @@ async function callGPT4oAPI(
             return;
           }
 
+          if (json.choices?.[0]?.finish_reason === "length") {
+            reject(new Error("Resposta do GPT-4o truncada (consulta muito longa). Tente novamente."));
+            return;
+          }
+
           const content = json.choices?.[0]?.message?.content ?? "{}";
           const parsed = JSON.parse(content) as Record<string, unknown>;
 
@@ -166,7 +184,14 @@ async function callGPT4oAPI(
               : [],
             confidence: typeof parsed["confidence"] === "number" ? parsed["confidence"] : 0.85,
             model: "gpt-4o",
-            rawJson: json as Record<string, unknown>,
+            // Apenas metadados: NUNCA guardar o conteúdo da resposta (nota clínica em texto puro)
+            rawJson: {
+              source: "openai",
+              openaiId: json.id ?? null,
+              model: json.model ?? "gpt-4o",
+              finishReason: json.choices?.[0]?.finish_reason ?? null,
+              usage: json.usage ?? null,
+            },
           });
         } catch (e) {
           reject(new Error(`Resposta inválida do GPT-4o: ${String(e)}`));
@@ -187,17 +212,17 @@ export async function generateSoapNote(
   patient: PatientData,
   preferredModel?: string
 ): Promise<SoapNoteResult> {
-  console.log("[SOAP] Gerando nota | modelo:", preferredModel ?? "gpt-4o");
-
-  // Non-GPT models use mock in MVP — structure ready for real integration
+  // Só o GPT-4o está integrado. Qualquer outra preferência usa o GPT-4o real
+  // (antes gerava uma nota FICTÍCIA silenciosamente).
   if (preferredModel && preferredModel !== "gpt-4o") {
-    const mock = getMockSoapNote(transcription);
-    return { ...mock, model: preferredModel };
+    console.warn(`[SOAP] Modelo "${preferredModel}" ainda não integrado — usando gpt-4o`);
   }
+  console.log("[SOAP] Gerando nota | modelo: gpt-4o");
 
   const apiKey = process.env["OPENAI_API_KEY"];
   if (!apiKey || apiKey === "your-openai-api-key-here") {
-    return getMockSoapNote(transcription);
+    if (aiMockAllowed()) return getMockSoapNote(transcription);
+    throw new AiConfigError("Geração de nota por IA indisponível: chave da OpenAI não configurada no servidor.");
   }
 
   try {
@@ -206,9 +231,12 @@ export async function generateSoapNote(
     const msg = err instanceof Error ? err.message : "";
 
     if (msg.includes("429") || msg.toLowerCase().includes("quota")) {
-      // [MOCK] Quando tiver crédito OpenAI, remova este if e chame API real
-      console.warn("[MOCK] GPT-4o: cota esgotada — gerando SOAP simulado");
-      return getMockSoapNote(transcription);
+      if (aiMockAllowed()) {
+        console.warn("[MOCK] GPT-4o: cota esgotada — gerando SOAP simulado");
+        return getMockSoapNote(transcription);
+      }
+      console.error("[SOAP] Cota da OpenAI esgotada (429)");
+      throw err;
     }
 
     console.error("[SOAP] Erro na geração:", msg);

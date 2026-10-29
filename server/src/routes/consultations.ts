@@ -1,7 +1,4 @@
-import fs from "fs";
-import path from "path";
-import os from "os";
-import { Router, Response } from "express";
+import { Router, Response, NextFunction } from "express";
 import multer from "multer";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
@@ -10,10 +7,10 @@ import { prisma } from "../lib/prisma";
 import { authenticate, AuthRequest } from "../middleware/auth";
 import { checkPlan } from "../middleware/checkPlan";
 import { lgpdRequired } from "../middleware/lgpdRequired";
+import { aiMockAllowed, AiConfigError } from "../lib/aiMode";
 import { transcribeAudio } from "../services/whisperService";
 import { generateSoapNote } from "../services/soapGeneratorService";
 import { generateSignedPdf, savePdf } from "../services/pdfSignerService";
-import { uploadAudio, getSignedUrl, isS3Configured } from "../services/s3Service";
 import { encryptField, decryptField } from "../lib/crypto";
 import { LOAD_TEST_MODE } from "../lib/loadTestMode";
 
@@ -26,32 +23,28 @@ const iaLimiter = rateLimit({
   message: { error: "Limite de requisições de IA excedido. Tente em 1 minuto.", code: "AI_RATE_LIMIT" },
 });
 
-// 3 audio accesses / min per IP — audio data is highly sensitive (raised under LOAD_TEST_MODE)
-const audioLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: LOAD_TEST_MODE ? 100_000 : 3,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "Limite de acesso a áudio excedido. Tente em 1 minuto.", code: "AUDIO_RATE_LIMIT" },
-});
-
 const router = Router();
 
-// Multer: saves audio to /tmp with a unique name
+// Multer em MEMÓRIA: o áudio nunca é gravado em disco. Limite = limite do Whisper (25 MB).
 const upload = multer({
-  dest: os.tmpdir(),
-  limits: { fileSize: 50 * 1024 * 1024 },
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    cb(
-      null,
-      ["audio/webm", "audio/wav", "audio/mp3", "audio/mpeg", "audio/ogg", "audio/mp4", "video/webm"].includes(
-        file.mimetype
-      ) ||
-        file.mimetype.startsWith("audio/") ||
-        file.mimetype.startsWith("video/")
-    );
+    cb(null, file.mimetype.startsWith("audio/") || file.mimetype.startsWith("video/"));
   },
 });
+
+function receiveAudio(req: AuthRequest, res: Response, next: NextFunction): void {
+  upload.single("audioFile")(req, res, (err: unknown) => {
+    if (!err) return next();
+    const code = (err as { code?: string }).code;
+    if (code === "LIMIT_FILE_SIZE") {
+      res.status(413).json({ error: "Áudio muito grande (máximo 25 MB). Grave em partes menores.", code: "AUDIO_TOO_LARGE" });
+      return;
+    }
+    res.status(400).json({ error: "Não foi possível receber o áudio.", code: "AUDIO_UPLOAD_ERROR" });
+  });
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -65,16 +58,6 @@ function toStatus(val: unknown): ConsultationStatus | undefined {
 function paramId(req: AuthRequest): string | null {
   const id = req.params["id"];
   return typeof id === "string" ? id : null;
-}
-
-// Fallback local — usado quando o S3 não está configurado (dev) ou o upload falha
-const AUDIO_DIR = "/tmp/ecohealth/audio";
-
-function saveLocalAudio(buffer: Buffer, consultationId: string, ext: string): string {
-  if (!fs.existsSync(AUDIO_DIR)) fs.mkdirSync(AUDIO_DIR, { recursive: true });
-  const filePath = path.join(AUDIO_DIR, `${consultationId}${ext}`);
-  fs.writeFileSync(filePath, buffer);
-  return filePath;
 }
 
 function getIp(req: AuthRequest): string {
@@ -194,7 +177,7 @@ router.get("/:id", authenticate, async (req: AuthRequest, res: Response) => {
               consultation.audioRecording.sizeBytes !== null
                 ? Number(consultation.audioRecording.sizeBytes)
                 : null,
-            // Internal storage location — never expose to the client (use GET /:id/audio instead)
+            // Legado: não há áudio armazenado (o áudio é descartado após a transcrição)
             s3Key: undefined,
             s3Bucket: undefined,
           }
@@ -395,12 +378,15 @@ router.patch("/:id/soap", authenticate, async (req: AuthRequest, res: Response) 
 });
 
 // ─── PATCH /api/consultations/:id/transcribe ─────────────────────────────────
+// O ÁUDIO NUNCA É ARMAZENADO: chega em memória, vai ao Whisper e é descartado
+// (o buffer é zerado ao final). Só ficam no banco a transcrição (criptografada)
+// e metadados (duração, tamanho e formato).
 
 router.patch(
   "/:id/transcribe",
   authenticate,
   iaLimiter,
-  upload.single("audioFile"),
+  receiveAudio,
   async (req: AuthRequest, res: Response) => {
     const id = paramId(req);
     if (!id) return res.status(400).json({ error: "ID inválido", code: "INVALID_ID" });
@@ -408,109 +394,143 @@ router.patch(
     const file = req.file;
     if (!file) return res.status(400).json({ error: "Arquivo de áudio obrigatório", code: "AUDIO_MISSING" });
 
-    const tmpPath = file.path;
-
     try {
       const consultation = await prisma.consultation.findFirst({
         where: { id, doctorId: req.userId! },
       });
       if (!consultation) {
-        fs.unlink(tmpPath, () => {});
         return res.status(404).json({ error: "Consulta não encontrada", code: "NOT_FOUND" });
       }
 
       await prisma.consultation.update({ where: { id }, data: { status: "PROCESSING" } });
 
-      const result = await transcribeAudio(tmpPath, id);
+      const result = await transcribeAudio(file.buffer, id, file.mimetype);
 
-      const ext = path.extname(file.originalname) || ".webm";
-      const audioBuffer = fs.readFileSync(tmpPath);
-
-      // Persist the audio itself — S3 (AES256 server-side encryption) when configured,
-      // otherwise a local fallback so dev environments work without AWS credentials.
-      let s3Key: string;
-      let s3Bucket: string;
-
-      if (isS3Configured()) {
-        try {
-          s3Key = await uploadAudio(audioBuffer, id, req.userId!, file.mimetype);
-          s3Bucket = process.env["AWS_S3_BUCKET"]!;
-        } catch (uploadErr) {
-          console.error("[S3] upload falhou, usando fallback local:", uploadErr);
-          s3Key = saveLocalAudio(audioBuffer, id, ext);
-          s3Bucket = "local";
-        }
-      } else {
-        s3Key = saveLocalAudio(audioBuffer, id, ext);
-        s3Bucket = "local";
+      // Áudio sem fala: não é "sucesso" — o médico precisa saber para gravar de novo
+      if (!result.text || result.text.trim().length < 3) {
+        await prisma.consultation.update({ where: { id }, data: { status: "PENDING" } }).catch(() => {});
+        return res.status(422).json({
+          error: "Não foi possível identificar fala no áudio. Verifique o microfone e grave novamente.",
+          code: "EMPTY_TRANSCRIPTION",
+        });
       }
 
-      await logAudit({
-        userId: req.userId!,
-        action: "AUDIO_UPLOADED",
-        resource: "consultation",
-        resourceId: id,
-        req,
-        metadata: { storage: s3Bucket === "local" ? "local" : "s3", sizeBytes: audioBuffer.length },
-      });
-
-      // Encrypt transcription before persisting
       const encryptedTranscription = encryptField(result.text);
+      const meta = {
+        s3Key: null,
+        s3Bucket: null, // legado: nunca há arquivo de áudio guardado
+        sizeBytes: BigInt(file.size),
+        durationSec: Math.round(result.duration),
+        mimeType: file.mimetype,
+        transcription: encryptedTranscription,
+        transcribedAt: new Date(),
+        transcriptionStatus: "COMPLETED" as const,
+      };
 
       await prisma.audioRecording.upsert({
         where: { consultationId: id },
-        create: {
-          consultationId: id,
-          s3Key,
-          s3Bucket,
-          sizeBytes: BigInt(audioBuffer.length),
-          durationSec: Math.round(result.duration),
-          mimeType: file.mimetype,
-          transcription: encryptedTranscription,
-          transcribedAt: new Date(),
-          transcriptionStatus: "COMPLETED",
-        },
-        update: {
-          s3Key,
-          s3Bucket,
-          sizeBytes: BigInt(audioBuffer.length),
-          transcription: encryptedTranscription,
-          transcribedAt: new Date(),
-          durationSec: Math.round(result.duration),
-          mimeType: file.mimetype,
-          transcriptionStatus: "COMPLETED",
-        },
+        create: { consultationId: id, ...meta },
+        update: meta,
       });
 
       await prisma.consultation.update({ where: { id }, data: { status: "COMPLETED" } });
 
-      // Return the plaintext to the client (already decrypted from result.text)
-      return res.json({ success: true, transcription: result.text, duration: result.duration });
+      await logAudit({
+        userId: req.userId!,
+        action: "TRANSCRIPTION_CREATED",
+        resource: "consultation",
+        resourceId: id,
+        req,
+        metadata: { durationSec: Math.round(result.duration), simulated: result.simulated === true },
+      });
+
+      return res.json({
+        success: true,
+        transcription: result.text,
+        duration: result.duration,
+        simulated: result.simulated === true,
+      });
     } catch (err) {
       console.error("transcribe error:", err);
 
-      await prisma.audioRecording
-        .upsert({
-          where: { consultationId: id },
-          create: { consultationId: id, transcriptionStatus: "ERROR" },
-          update: { transcriptionStatus: "ERROR" },
-        })
-        .catch(() => {});
-      await prisma.consultation.update({ where: { id }, data: { status: "FAILED" } }).catch(() => {});
-
       const errMsg = err instanceof Error ? err.message : "Erro na transcrição";
+      const notConfigured = err instanceof AiConfigError;
       const is429 = errMsg.includes("429");
-      const statusCode = is429 ? 402 : 500;
-      const userMsg = is429
-        ? "Cota OpenAI esgotada. Adicione créditos em platform.openai.com/account/billing."
-        : errMsg;
 
-      return res.status(statusCode).json({ error: userMsg, code: is429 ? "QUOTA_EXCEEDED" : "TRANSCRIPTION_ERROR" });
+      // Falta de chave/cota é recuperável: a consulta volta a PENDING (não FAILED)
+      await prisma.consultation
+        .update({ where: { id }, data: { status: notConfigured || is429 ? "PENDING" : "FAILED" } })
+        .catch(() => {});
+
+      if (notConfigured) {
+        return res.status(503).json({ error: errMsg, code: "AI_NOT_CONFIGURED" });
+      }
+      if (is429) {
+        return res.status(402).json({
+          error: "Cota OpenAI esgotada. Adicione créditos em platform.openai.com/account/billing.",
+          code: "QUOTA_EXCEEDED",
+        });
+      }
+      return res.status(500).json({ error: errMsg, code: "TRANSCRIPTION_ERROR" });
     } finally {
-      fs.unlink(tmpPath, () => {});
+      file.buffer.fill(0); // apaga o áudio da memória
     }
   }
 );
+
+// ─── PATCH /api/consultations/:id/transcription ──────────────────────────────
+// O médico corrige a transcrição (ex.: nome de medicamento) ANTES de gerar o SOAP.
+// A nota é gerada a partir do texto corrigido salvo aqui.
+
+const transcriptionEditSchema = z.object({
+  transcription: z.string().trim().min(3).max(100_000),
+});
+
+router.patch("/:id/transcription", authenticate, async (req: AuthRequest, res: Response) => {
+  const id = paramId(req);
+  if (!id) return res.status(400).json({ error: "ID inválido", code: "INVALID_ID" });
+
+  const parse = transcriptionEditSchema.safeParse(req.body);
+  if (!parse.success) {
+    return res.status(400).json({ error: "Transcrição inválida (mínimo 3 caracteres).", code: "VALIDATION_ERROR" });
+  }
+
+  try {
+    const consultation = await prisma.consultation.findFirst({
+      where: { id, doctorId: req.userId! },
+      select: { id: true },
+    });
+    if (!consultation) {
+      return res.status(404).json({ error: "Consulta não encontrada", code: "NOT_FOUND" });
+    }
+
+    const recording = await prisma.audioRecording.findUnique({
+      where: { consultationId: id },
+      select: { id: true },
+    });
+    if (!recording) {
+      return res.status(404).json({ error: "Transcrição não encontrada", code: "RECORDING_NOT_FOUND" });
+    }
+
+    await prisma.audioRecording.update({
+      where: { consultationId: id },
+      data: { transcription: encryptField(parse.data.transcription) },
+    });
+
+    await logAudit({
+      userId: req.userId!,
+      action: "TRANSCRIPTION_EDITED",
+      resource: "consultation",
+      resourceId: id,
+      req,
+    });
+
+    return res.json({ success: true, transcription: parse.data.transcription });
+  } catch (err) {
+    console.error("update transcription:", err);
+    return res.status(500).json({ error: "Erro interno", code: "INTERNAL_ERROR" });
+  }
+});
 
 // ─── POST /api/consultations/:id/generate-soap ───────────────────────────────
 
@@ -600,6 +620,16 @@ router.post("/:id/generate-soap", authenticate, iaLimiter, async (req: AuthReque
     });
   } catch (err) {
     console.error("generate-soap error:", err);
+    if (err instanceof AiConfigError) {
+      return res.status(503).json({ error: err.message, code: "AI_NOT_CONFIGURED" });
+    }
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.includes("429") || msg.toLowerCase().includes("quota")) {
+      return res.status(402).json({
+        error: "Cota OpenAI esgotada. Adicione créditos em platform.openai.com/account/billing.",
+        code: "QUOTA_EXCEEDED",
+      });
+    }
     return res.status(500).json({ error: "Erro ao gerar nota SOAP", code: "SOAP_GENERATION_ERROR" });
   }
 });
@@ -636,6 +666,14 @@ router.post("/:id/sign", authenticate, checkPlan, async (req: AuthRequest, res: 
 
     if (!consultation.soapNote) {
       return res.status(400).json({ error: "Nota SOAP não gerada ainda", code: "NO_SOAP_NOTE" });
+    }
+
+    // Nota gerada em modo simulado (sem IA real) é dado fictício: não pode ser assinada
+    if (consultation.soapNote.model === "mock" && !aiMockAllowed()) {
+      return res.status(409).json({
+        error: "Esta nota foi gerada em modo simulado (sem IA real) e não pode ser assinada. Gere a nota novamente.",
+        code: "SIMULATED_NOTE",
+      });
     }
 
     // Decrypt SOAP fields before building the PDF — the PDF must contain readable text
@@ -683,121 +721,6 @@ router.post("/:id/sign", authenticate, checkPlan, async (req: AuthRequest, res: 
   } catch (err) {
     console.error("sign consultation error:", err);
     return res.status(500).json({ error: "Erro ao gerar PDF assinado", code: "PDF_GENERATION_ERROR" });
-  }
-});
-
-// ─── GET /api/consultations/:id/audio ────────────────────────────────────────
-// Ownership-verified, rate-limited, audited access to audio/transcription data.
-// audioUrl is a 5-minute presigned S3 URL when stored in S3, or a path to the
-// local-fallback streaming route (GET /:id/audio/file) when S3 isn't configured.
-
-router.get("/:id/audio", authenticate, audioLimiter, async (req: AuthRequest, res: Response) => {
-  const id = paramId(req);
-  if (!id) return res.status(400).json({ error: "ID inválido", code: "INVALID_ID" });
-
-  try {
-    const consultation = await prisma.consultation.findFirst({
-      where: { id, doctorId: req.userId! },
-      select: { id: true },
-    });
-
-    if (!consultation) {
-      return res.status(404).json({ error: "Consulta não encontrada", code: "NOT_FOUND" });
-    }
-
-    const recording = await prisma.audioRecording.findUnique({
-      where: { consultationId: id },
-      select: {
-        durationSec: true,
-        mimeType: true,
-        transcription: true,
-        transcriptionStatus: true,
-        transcribedAt: true,
-        s3Key: true,
-      },
-    });
-
-    if (!recording) {
-      return res.status(404).json({ error: "Gravação não encontrada", code: "RECORDING_NOT_FOUND" });
-    }
-
-    let audioUrl: string | null = null;
-    if (recording.s3Key?.startsWith("s3://")) {
-      try {
-        audioUrl = await getSignedUrl(recording.s3Key);
-      } catch (err) {
-        console.error("gerar signed url:", err);
-      }
-    } else if (recording.s3Key && fs.existsSync(recording.s3Key)) {
-      audioUrl = `/api/consultations/${id}/audio/file`;
-    }
-
-    await logAudit({
-      userId: req.userId!,
-      action: "AUDIO_ACCESSED",
-      resource: "consultation",
-      resourceId: id,
-      req,
-    });
-
-    return res.json({
-      success: true,
-      recording: {
-        durationSec: recording.durationSec,
-        mimeType: recording.mimeType,
-        transcriptionStatus: recording.transcriptionStatus,
-        transcribedAt: recording.transcribedAt,
-        transcription: decryptField(recording.transcription),
-        audioUrl,
-      },
-    });
-  } catch (err) {
-    console.error("audio access error:", err);
-    return res.status(500).json({ error: "Erro interno", code: "INTERNAL_ERROR" });
-  }
-});
-
-// ─── GET /api/consultations/:id/audio/file ───────────────────────────────────
-// Streams the local-fallback audio file. Only reachable when the recording was
-// NOT persisted to S3 (s3Key holds a filesystem path rather than an s3:// URI).
-
-router.get("/:id/audio/file", authenticate, audioLimiter, async (req: AuthRequest, res: Response) => {
-  const id = paramId(req);
-  if (!id) return res.status(400).json({ error: "ID inválido", code: "INVALID_ID" });
-
-  try {
-    const consultation = await prisma.consultation.findFirst({
-      where: { id, doctorId: req.userId! },
-      select: { id: true },
-    });
-
-    if (!consultation) {
-      return res.status(404).json({ error: "Consulta não encontrada", code: "NOT_FOUND" });
-    }
-
-    const recording = await prisma.audioRecording.findUnique({
-      where: { consultationId: id },
-      select: { s3Key: true, mimeType: true },
-    });
-
-    if (!recording?.s3Key || recording.s3Key.startsWith("s3://") || !fs.existsSync(recording.s3Key)) {
-      return res.status(404).json({ error: "Arquivo de áudio não encontrado", code: "FILE_NOT_FOUND" });
-    }
-
-    await logAudit({
-      userId: req.userId!,
-      action: "AUDIO_DOWNLOADED",
-      resource: "consultation",
-      resourceId: id,
-      req,
-    });
-
-    res.setHeader("Content-Type", recording.mimeType);
-    fs.createReadStream(recording.s3Key).pipe(res);
-    return;
-  } catch (err) {
-    console.error("audio file stream error:", err);
-    return res.status(500).json({ error: "Erro interno", code: "INTERNAL_ERROR" });
   }
 });
 

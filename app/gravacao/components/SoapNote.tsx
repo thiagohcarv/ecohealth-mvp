@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SoapNoteData } from "@/app/hooks/useSoapGenerator";
+import { api } from "@/lib/api";
 
 type SoapTab = "S" | "O" | "A" | "P";
 
@@ -21,25 +22,57 @@ interface Props {
 export function SoapNote({ soapData, consultationId, onChange }: Props) {
   const [activeTab, setActiveTab] = useState<SoapTab>("S");
   const [edited, setEdited] = useState<SoapNoteData>(soapData);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestRef = useRef<SoapNoteData>(soapData);
+  const dirtyRef = useRef(false);
 
   // Sincroniza quando soapData mudar externamente
-  useEffect(() => { setEdited(soapData); }, [soapData]);
+  useEffect(() => {
+    setEdited(soapData);
+    latestRef.current = soapData;
+  }, [soapData]);
+
+  const payload = (n: SoapNoteData) => ({
+    subjective: n.subjective,
+    objective: n.objective,
+    assessment: n.assessment,
+    plan: n.plan,
+    icd10Codes: n.icd10Codes,
+  });
+
+  // A nota é salva NO SERVIDOR (criptografada) — nada de cópia no navegador
+  const persist = useCallback(async () => {
+    if (!dirtyRef.current) return;
+    dirtyRef.current = false;
+    setSaveState("saving");
+    const res = await api.patch(`/api/consultations/${consultationId}/soap`, payload(latestRef.current));
+    if ("error" in res) {
+      dirtyRef.current = true;
+      setSaveState("error");
+    } else {
+      setSaveState("saved");
+    }
+  }, [consultationId]);
 
   const handleChange = useCallback((field: keyof SoapNoteData, value: string) => {
-    setEdited((prev) => {
-      const updated = { ...prev, [field]: value };
+    const updated = { ...latestRef.current, [field]: value };
+    latestRef.current = updated;
+    dirtyRef.current = true;
+    setEdited(updated);
+    setSaveState("idle");
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => { void persist(); }, 1500);
+    onChange?.(updated);
+  }, [onChange, persist]);
 
-      // Auto-save debounced no localStorage
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = setTimeout(() => {
-        localStorage.setItem(`eco_soap_${consultationId}`, JSON.stringify(updated));
-      }, 600);
-
-      onChange?.(updated);
-      return updated;
-    });
-  }, [consultationId, onChange]);
+  // Ao sair da tela, grava o que ainda estiver pendente
+  useEffect(() => () => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    if (dirtyRef.current) {
+      void api.patch(`/api/consultations/${consultationId}/soap`, payload(latestRef.current));
+    }
+  }, [consultationId]);
 
   const activeTabDef = TABS.find((t) => t.key === activeTab) ?? TABS[0]!;
   const confidence = edited.confidence !== null ? Math.round((edited.confidence ?? 0) * 100) : null;
@@ -51,12 +84,20 @@ export function SoapNote({ soapData, consultationId, onChange }: Props) {
 
   return (
     <div className="w-full animate-fade-in">
+      {edited.model === "mock" && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 mb-3 text-xs text-amber-800 font-inter leading-snug">
+          <strong>NOTA SIMULADA</strong> — conteúdo fictício, sem IA real. Não use em atendimento nem assine.
+        </div>
+      )}
       {/* Cabeçalho com confiança e modelo */}
       <div className="flex items-center justify-between mb-3 px-1">
         <span className="text-xs font-medium text-secondary-400 uppercase tracking-wider">
           Nota SOAP
         </span>
         <div className="flex items-center gap-2">
+          {saveState === "saving" && <span className="text-xs text-secondary-400">Salvando…</span>}
+          {saveState === "saved" && <span className="text-xs text-green-600">Salvo</span>}
+          {saveState === "error" && <span className="text-xs text-red-500">Não salvo — verifique a conexão</span>}
           {confidence !== null && (
             <span className={`text-xs font-medium ${confidenceColor}`}>
               {confidence}% confiança

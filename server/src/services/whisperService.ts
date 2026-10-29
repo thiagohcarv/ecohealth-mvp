@@ -1,11 +1,13 @@
-import fs from "fs";
 import https from "https";
 import FormData from "form-data";
+import { aiMockAllowed, AiConfigError } from "../lib/aiMode";
 
 export interface TranscriptionResult {
   text: string;
   duration: number;
   language: string;
+  /** true quando o texto é simulado (NÃO veio do áudio gravado) */
+  simulated?: boolean;
 }
 
 interface WhisperVerboseResponse {
@@ -27,15 +29,30 @@ function getMockTranscription(): TranscriptionResult {
   const text = MOCK_TRANSCRIPTIONS[idx] ?? MOCK_TRANSCRIPTIONS[0]!;
   // [MOCK] Quando tiver crédito OpenAI, remova este bloco e chame API real
   console.warn("[MOCK] Transcrição simulada (quando tiver crédito, mude para real)");
-  return { text, duration: 42, language: "pt" };
+  return { text, duration: 42, language: "pt", simulated: true };
 }
 
-async function callWhisperAPI(audioPath: string, apiKey: string): Promise<WhisperVerboseResponse> {
+const EXT_BY_MIME: Record<string, string> = {
+  "audio/webm": "webm",
+  "video/webm": "webm",
+  "audio/mp4": "mp4",
+  "audio/mpeg": "mp3",
+  "audio/mp3": "mp3",
+  "audio/ogg": "ogg",
+  "audio/wav": "wav",
+};
+
+async function callWhisperAPI(
+  audio: Buffer,
+  apiKey: string,
+  mimeType = "audio/webm"
+): Promise<WhisperVerboseResponse> {
   return new Promise((resolve, reject) => {
+    const baseType = mimeType.split(";")[0] ?? "audio/webm";
     const form = new FormData();
-    form.append("file", fs.createReadStream(audioPath), {
-      filename: "audio.webm",
-      contentType: "audio/webm",
+    form.append("file", audio, {
+      filename: `audio.${EXT_BY_MIME[baseType] ?? "webm"}`,
+      contentType: baseType,
     });
     form.append("model", "whisper-1");
     form.append("language", "pt");
@@ -77,14 +94,16 @@ async function callWhisperAPI(audioPath: string, apiKey: string): Promise<Whispe
 }
 
 export async function transcribeAudio(
-  audioPath: string,
-  consultationId: string
+  audio: Buffer,
+  consultationId: string,
+  mimeType?: string
 ): Promise<TranscriptionResult> {
   console.log(`[Whisper] Iniciando | consultationId=${consultationId}`);
 
   const apiKey = process.env["OPENAI_API_KEY"];
   if (!apiKey || apiKey === "your-openai-api-key-here") {
-    return getMockTranscription();
+    if (aiMockAllowed()) return getMockTranscription();
+    throw new AiConfigError("Transcrição por IA indisponível: chave da OpenAI não configurada no servidor.");
   }
 
   const MAX_RETRIES = 2;
@@ -92,7 +111,7 @@ export async function transcribeAudio(
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const response = await callWhisperAPI(audioPath, apiKey);
+      const response = await callWhisperAPI(audio, apiKey, mimeType);
       const duration = response.duration ?? 0;
       const language = response.language ?? "pt";
       console.log(`[Whisper] Concluído | consultationId=${consultationId} | duração=${duration}s`);
@@ -102,9 +121,13 @@ export async function transcribeAudio(
       const msg = lastError.message;
 
       if (msg.includes("429")) {
-        // [MOCK] Quando tiver crédito OpenAI, remova este if e chame API real
-        console.warn(`[MOCK] Cota Whisper esgotada na tentativa ${attempt} — usando transcrição simulada`);
-        return getMockTranscription();
+        // Sem cota: só simula se o modo mock for permitido (nunca em produção por padrão)
+        if (aiMockAllowed()) {
+          console.warn(`[MOCK] Cota Whisper esgotada na tentativa ${attempt} — usando transcrição simulada`);
+          return getMockTranscription();
+        }
+        console.error("[Whisper] Cota da OpenAI esgotada (429)");
+        throw lastError;
       }
 
       if (msg.includes("401") || msg.includes("403") || msg.includes("400")) {

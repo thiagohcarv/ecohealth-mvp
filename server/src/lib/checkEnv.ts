@@ -9,9 +9,6 @@ const REQUIRED: EnvRule[] = [
   { key: "ENCRYPTION_KEY",  minLength: 32 },
 ];
 
-// S3 é opcional em dev — sem estas variáveis, o áudio cai no fallback local (/tmp/ecohealth/audio)
-const OPTIONAL_AWS: string[] = ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_S3_BUCKET", "AWS_REGION"];
-
 /**
  * Validates required environment variables at server startup.
  * Exits with code 1 if any are missing or too short — prevents the server
@@ -44,12 +41,14 @@ export function checkEnv(): void {
     process.exit(1);
   }
 
-  const missingAws = OPTIONAL_AWS.filter((key) => !process.env[key]);
-  if (missingAws.length > 0) {
-    console.warn(
-      `[ENV] AVISO — S3 não configurado (${missingAws.join(", ")}). Áudio será salvo localmente em /tmp/ecohealth/audio.`
-    );
+  if (process.env["OPENAI_API_KEY"]) {
+    console.log("[ENV] ✓ OPENAI_API_KEY");
   } else {
-    console.log("[ENV] ✓ AWS S3 configurado");
+    const demo = process.env["NODE_ENV"] !== "production" || process.env["ALLOW_AI_MOCK"] === "true";
+    console.warn(
+      demo
+        ? "[ENV] AVISO — OPENAI_API_KEY ausente: IA em modo SIMULADO (dados fictícios)."
+        : "[ENV] AVISO — OPENAI_API_KEY ausente: transcrição e notas por IA ficarão INDISPONÍVEIS."
+    );
   }
 }

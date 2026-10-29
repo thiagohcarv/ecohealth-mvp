@@ -9,6 +9,7 @@ export interface UseWhisperReturn {
   status: WhisperStatus;
   transcription: string | null;
   duration: number | null;
+  simulated: boolean;
   error: string | null;
   uploadAudio: (blob: Blob, consultationId: string) => Promise<string | null>;
   reset: () => void;
@@ -18,6 +19,7 @@ interface TranscribeResponse {
   success: boolean;
   transcription: string;
   duration: number;
+  simulated?: boolean;
   error?: string;
 }
 
@@ -33,6 +35,7 @@ export function useWhisper(): UseWhisperReturn {
   const [status, setStatus] = useState<WhisperStatus>("idle");
   const [transcription, setTranscription] = useState<string | null>(null);
   const [duration, setDuration] = useState<number | null>(null);
+  const [simulated, setSimulated] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const uploadAudio = useCallback(async (blob: Blob, consultationId: string): Promise<string | null> => {
@@ -44,7 +47,14 @@ export function useWhisper(): UseWhisperReturn {
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
         const formData = new FormData();
-        formData.append("audioFile", blob, "gravacao.webm");
+        const ext = blob.type.includes("mp4")
+          ? "mp4"
+          : blob.type.includes("ogg")
+            ? "ogg"
+            : blob.type.includes("wav")
+              ? "wav"
+              : "webm";
+        formData.append("audioFile", blob, `gravacao.${ext}`);
 
         const headers: Record<string, string> = { "x-ai-model": getAiModel() };
         const token = getToken();
@@ -67,10 +77,8 @@ export function useWhisper(): UseWhisperReturn {
 
         setTranscription(json.transcription);
         setDuration(json.duration);
+        setSimulated(json.simulated === true);
         setStatus("done");
-
-        // Persiste localmente
-        localStorage.setItem(`eco_transcription_${consultationId}`, json.transcription);
 
         return json.transcription;
       } catch {
@@ -90,8 +98,9 @@ export function useWhisper(): UseWhisperReturn {
     setStatus("idle");
     setTranscription(null);
     setDuration(null);
+    setSimulated(false);
     setError(null);
   }, []);
 
-  return { status, transcription, duration, error, uploadAudio, reset };
+  return { status, transcription, duration, simulated, error, uploadAudio, reset };
 }

@@ -81,9 +81,9 @@ export default function LgpdPage() {
 
             <Section title="2. Dados coletados">
               <ul className="list-disc pl-4 flex flex-col gap-1.5">
-                <li><strong>Gravação de áudio</strong> das consultas médicas realizadas no aplicativo.</li>
-                <li><strong>Transcrição automática</strong> de voz gerada por inteligência artificial (OpenAI Whisper).</li>
-                <li><strong>Dados de saúde dos pacientes</strong> presentes na transcrição e nas notas SOAP (dados sensíveis, art. 11 LGPD).</li>
+                <li><strong>Gravação de áudio</strong> das consultas: usada apenas para gerar a transcrição e <strong>descartada em seguida. A EcoHealth não armazena o áudio.</strong></li>
+                <li><strong>Transcrição automática</strong> de voz gerada por inteligência artificial (OpenAI Whisper), armazenada de forma criptografada.</li>
+                <li><strong>Dados de saúde dos pacientes</strong> presentes na transcrição e nas notas SOAP, armazenados de forma criptografada (dados sensíveis, art. 11 LGPD).</li>
                 <li><strong>Dados cadastrais do médico</strong>: nome, CRM, e-mail, CPF.</li>
                 <li><strong>Dados de acesso</strong>: endereço IP, tipo de dispositivo, horário de conexão.</li>
               </ul>
@@ -114,7 +114,7 @@ export default function LgpdPage() {
             <Section title="5. Compartilhamento">
               <ul className="list-disc pl-4 flex flex-col gap-1.5">
                 <li>
-                  <strong>OpenAI</strong> — transcrição (Whisper) e estruturação de notas (GPT-4o),
+                  <strong>OpenAI</strong> — o áudio é enviado apenas para transcrição (Whisper) e o texto para estruturação de notas (GPT-4o),
                   regida pela Política de Privacidade OpenAI Business.
                 </li>
                 <li>Não vendemos nem cedemos dados a terceiros para fins publicitários.</li>

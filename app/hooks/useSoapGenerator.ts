@@ -64,7 +64,6 @@ export function useSoapGenerator(): UseSoapGeneratorReturn {
       setSoapNote(json.soapNote);
       setStatus("done");
 
-      localStorage.setItem(`eco_soap_${consultationId}`, JSON.stringify(json.soapNote));
       return json.soapNote;
     } catch {
       setError("Erro de rede ao gerar SOAP");
