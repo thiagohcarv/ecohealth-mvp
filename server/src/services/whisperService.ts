@@ -1,6 +1,6 @@
 import https from "https";
 import FormData from "form-data";
-import { aiMockAllowed, AiConfigError } from "../lib/aiMode";
+import { aiMockAllowed, AiConfigError, getOpenAiKey } from "../lib/aiMode";
 
 export interface TranscriptionResult {
   text: string;
@@ -100,7 +100,7 @@ export async function transcribeAudio(
 ): Promise<TranscriptionResult> {
   console.log(`[Whisper] Iniciando | consultationId=${consultationId}`);
 
-  const apiKey = process.env["OPENAI_API_KEY"];
+  const apiKey = getOpenAiKey();
   if (!apiKey || apiKey === "your-openai-api-key-here") {
     if (aiMockAllowed()) return getMockTranscription();
     throw new AiConfigError("Transcrição por IA indisponível: chave da OpenAI não configurada no servidor.");

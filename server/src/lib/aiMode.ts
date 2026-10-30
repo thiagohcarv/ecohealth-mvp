@@ -17,3 +17,11 @@ export class AiConfigError extends Error {
     this.name = "AiConfigError";
   }
 }
+
+/** Lê a chave da OpenAI removendo espaços, quebras de linha e aspas coladas por engano no painel. */
+export function getOpenAiKey(): string | undefined {
+  const raw = process.env["OPENAI_API_KEY"];
+  if (!raw) return undefined;
+  const key = raw.replace(/[\s"'`]/g, "");
+  return key.length > 0 ? key : undefined;
+}

@@ -1,5 +1,5 @@
 import https from "https";
-import { aiMockAllowed, AiConfigError } from "../lib/aiMode";
+import { aiMockAllowed, AiConfigError, getOpenAiKey } from "../lib/aiMode";
 
 export interface SoapNoteResult {
   subjective: string;
@@ -219,7 +219,7 @@ export async function generateSoapNote(
   }
   console.log("[SOAP] Gerando nota | modelo: gpt-4o");
 
-  const apiKey = process.env["OPENAI_API_KEY"];
+  const apiKey = getOpenAiKey();
   if (!apiKey || apiKey === "your-openai-api-key-here") {
     if (aiMockAllowed()) return getMockSoapNote(transcription);
     throw new AiConfigError("Geração de nota por IA indisponível: chave da OpenAI não configurada no servidor.");
