@@ -62,9 +62,9 @@ export function AudioRecorder({ consultationId, onTranscriptionComplete }: Props
       <div className="relative flex items-center justify-center mt-10 mb-8">
         {state === "recording" && (
           <>
-            <div className="absolute w-[164px] h-[164px] rounded-full border-2 border-primary-100 animate-ripple" />
-            <div className="absolute w-[130px] h-[130px] rounded-full border-2 border-primary-100 animate-ripple-delay" />
-            <div className="absolute w-[98px] h-[98px] rounded-full border-2 border-primary animate-ripple-delay-2" />
+            <div className="pointer-events-none absolute w-[164px] h-[164px] rounded-full border-2 border-primary-100 animate-ripple" />
+            <div className="pointer-events-none absolute w-[130px] h-[130px] rounded-full border-2 border-primary-100 animate-ripple-delay" />
+            <div className="pointer-events-none absolute w-[98px] h-[98px] rounded-full border-2 border-primary animate-ripple-delay-2" />
           </>
         )}
 
@@ -72,7 +72,7 @@ export function AudioRecorder({ consultationId, onTranscriptionComplete }: Props
         {state === "default" && (
           <button
             onClick={handleStart}
-            className="w-[162px] h-[162px] rounded-full bg-primary shadow-xl flex items-center justify-center transition-transform active:scale-95"
+            className="relative z-10 w-[162px] h-[162px] rounded-full bg-primary shadow-xl flex items-center justify-center transition-transform active:scale-95"
             aria-label="Iniciar gravação"
           >
             <svg width="52" height="52" viewBox="0 0 24 24" fill="white">
@@ -87,7 +87,7 @@ export function AudioRecorder({ consultationId, onTranscriptionComplete }: Props
         {state === "recording" && (
           <button
             onClick={handleStop}
-            className="w-[162px] h-[162px] rounded-full bg-red-500 shadow-xl flex flex-col items-center justify-center gap-1 transition-transform active:scale-95"
+            className="relative z-10 w-[162px] h-[162px] rounded-full bg-red-500 shadow-xl flex flex-col items-center justify-center gap-1 transition-transform active:scale-95"
             aria-label="Parar gravação"
           >
             <svg width="36" height="36" viewBox="0 0 24 24" fill="white">
