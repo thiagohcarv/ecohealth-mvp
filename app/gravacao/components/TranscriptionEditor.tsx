@@ -73,7 +73,7 @@ export function TranscriptionEditor({ consultationId, value, onChange }: Props) 
       <textarea
         value={value}
         onChange={handleChange}
-        rows={9}
+        rows={5}
         aria-label="Transcrição da consulta"
         className="w-full border border-secondary-100 rounded-2xl px-4 py-3 text-sm font-inter text-secondary-500 leading-relaxed outline-none resize-y focus:border-primary transition-colors"
       />

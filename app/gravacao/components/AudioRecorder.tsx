@@ -109,10 +109,10 @@ export function AudioRecorder({ consultationId, onTranscriptionComplete }: Props
         {state === "done" && (
           <button
             onClick={handleNewRecording}
-            className="w-[162px] h-[162px] rounded-full bg-green-500 shadow-xl flex flex-col items-center justify-center gap-1 transition-transform active:scale-95"
+            className="relative z-10 w-[104px] h-[104px] rounded-full bg-green-500 shadow-xl flex flex-col items-center justify-center gap-1 transition-transform active:scale-95"
             aria-label="Nova gravação"
           >
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
               <polyline points="20 6 9 17 4 12" />
             </svg>
             <span className="text-white text-xs font-medium font-inter">Concluído</span>

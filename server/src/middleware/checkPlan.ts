@@ -4,6 +4,11 @@ import { AuthRequest } from "./auth";
 import { checkTrialStatus } from "../services/stripeService";
 
 export async function checkPlan(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  // Alpha: cobrança ainda não existe, então o trial NÃO bloqueia. Para ligar: ENFORCE_TRIAL=true
+  if (process.env["ENFORCE_TRIAL"] !== "true") {
+    next();
+    return;
+  }
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.userId! },

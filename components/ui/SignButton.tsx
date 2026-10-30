@@ -12,6 +12,7 @@ interface SignButtonProps {
 export function SignButton({ consultationId, onSigned }: SignButtonProps) {
   const [state, setState] = useState<SignState>("idle");
   const [toast, setToast] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   async function handleSign() {
     setState("loading");
@@ -27,7 +28,8 @@ export function SignButton({ consultationId, onSigned }: SignButtonProps) {
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error((body as { error?: string }).error ?? "Erro ao assinar");
+        const b = body as { error?: string; code?: string };
+        throw new Error(`${b.error ?? "Erro ao assinar"}${b.code ? ` (${b.code})` : ` (HTTP ${res.status})`}`);
       }
 
       const blob = await res.blob();
@@ -48,8 +50,9 @@ export function SignButton({ consultationId, onSigned }: SignButtonProps) {
       setTimeout(() => setToast(false), 4000);
     } catch (err) {
       console.error("sign error:", err);
+      setErrorMsg(err instanceof Error ? err.message : "Erro ao assinar");
       setState("error");
-      setTimeout(() => setState("idle"), 3000);
+      setTimeout(() => setState("idle"), 8000);
     }
   }
 
@@ -104,6 +107,9 @@ export function SignButton({ consultationId, onSigned }: SignButtonProps) {
             </>
           )}
         </button>
+      )}
+      {state === "error" && errorMsg && (
+        <p className="mt-2 text-xs text-red-500 text-center">{errorMsg}</p>
       )}
     </div>
   );
