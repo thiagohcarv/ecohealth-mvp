@@ -73,6 +73,7 @@ export default function CadastroPage() {
       uf: form.uf,
       cpf: form.cpf || undefined,
       telefone: form.telefone || undefined,
+      dataNascimento: form.dataNascimento || undefined,
     });
     setLoading(false);
 

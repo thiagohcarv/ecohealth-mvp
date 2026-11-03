@@ -127,5 +127,22 @@ export interface ConsultationItem {
 
 export interface MeResponse {
   success: boolean;
-  user: { id: string; email: string; name: string; crm: string; isVerified: boolean };
+  user: {
+    id: string;
+    email: string;
+    name: string;
+    crm: string;
+    isVerified: boolean;
+    // Dados profissionais complementares (opcionais)
+    cpf?: string | null;
+    phone?: string | null;
+    birthDate?: string | null;
+    specialty?: string | null;
+    city?: string | null;
+    workplaceName?: string | null;
+    workplaceAddress?: string | null;
+    workplacePhone?: string | null;
+    workplaceCity?: string | null;
+    workplaceUf?: string | null;
+  };
 }

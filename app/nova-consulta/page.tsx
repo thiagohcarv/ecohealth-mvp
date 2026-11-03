@@ -40,6 +40,9 @@ export default function NovaConsultaPage() {
   const [selecionado, setSelecionado] = useState<string | null>(null);
   const [novoNome, setNovoNome] = useState("");
   const [novoNasc, setNovoNasc] = useState("");
+  const [novoSexo, setNovoSexo] = useState<"" | "Feminino" | "Masculino">("");
+  const [novoCpf, setNovoCpf] = useState("");
+  const [novoTel, setNovoTel] = useState("");
   const [queixa, setQueixa] = useState("");
 
   const [loading, setLoading] = useState(false);
@@ -80,6 +83,9 @@ export default function NovaConsultaPage() {
         const patRes = await api.post<PatientCreateResponse>("/api/patients", {
           name: nome,
           ...(novoNasc ? { dateOfBirth: novoNasc } : {}),
+          ...(novoSexo ? { sex: novoSexo } : {}),
+          ...(novoCpf.trim() ? { cpf: novoCpf.trim() } : {}),
+          ...(novoTel.trim() ? { phone: novoTel.trim() } : {}),
         });
         if ("error" in patRes) {
           setErro(patRes.error ?? "Erro ao criar paciente.");
@@ -199,6 +205,30 @@ export default function NovaConsultaPage() {
                   className="border border-secondary-100 rounded-[10px] px-3.5 py-2.5 text-sm font-inter text-secondary-400 outline-none focus:border-primary transition-colors"
                 />
                 <p className="text-[11px] text-secondary-300 -mt-1">Data de nascimento (opcional)</p>
+                <select
+                  value={novoSexo}
+                  onChange={(e) => setNovoSexo(e.target.value as "" | "Feminino" | "Masculino")}
+                  className="border border-secondary-100 rounded-[10px] px-3.5 py-2.5 text-sm font-inter text-secondary-400 outline-none focus:border-primary transition-colors bg-white"
+                >
+                  <option value="">Sexo (opcional)</option>
+                  <option value="Feminino">Feminino</option>
+                  <option value="Masculino">Masculino</option>
+                </select>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="CPF (opcional)"
+                  value={novoCpf}
+                  onChange={(e) => setNovoCpf(e.target.value)}
+                  className="border border-secondary-100 rounded-[10px] px-3.5 py-2.5 text-sm font-inter text-secondary-500 outline-none placeholder:text-secondary-300 focus:border-primary transition-colors"
+                />
+                <input
+                  type="tel"
+                  placeholder="Telefone (opcional)"
+                  value={novoTel}
+                  onChange={(e) => setNovoTel(e.target.value)}
+                  className="border border-secondary-100 rounded-[10px] px-3.5 py-2.5 text-sm font-inter text-secondary-500 outline-none placeholder:text-secondary-300 focus:border-primary transition-colors"
+                />
               </div>
             )}
           </div>

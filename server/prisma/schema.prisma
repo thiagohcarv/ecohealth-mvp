@@ -25,6 +25,16 @@ model User {
   stripeCustomerId     String?
   stripeSubscriptionId String?
 
+  // Dados profissionais complementares — opcionais para não afetar contas existentes
+  birthDate        DateTime? @db.Date
+  specialty        String?
+  city             String?
+  workplaceName    String?
+  workplaceAddress String?
+  workplacePhone   String?
+  workplaceCity    String?
+  workplaceUf      String?
+
   patients      Patient[]
   consultations Consultation[]
   lgpdConsents  LgpdConsent[]
@@ -41,6 +51,7 @@ model Patient {
   phone       String?
   email       String?
   notes       String?   @db.Text
+  sex         String?   // "Masculino" | "Feminino"
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 

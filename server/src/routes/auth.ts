@@ -7,6 +7,7 @@ import { signToken, getTokenExpiry } from "../lib/jwt";
 import { authenticate, AuthRequest } from "../middleware/auth";
 import { revokeToken } from "../lib/tokenBlacklist";
 import { encryptField } from "../lib/crypto";
+import { isValidCpf, onlyDigits, parseBirthDate } from "../lib/validators";
 
 const router = Router();
 
@@ -56,6 +57,7 @@ const registerSchema = z.object({
   uf: z.string().length(2, "UF deve ter 2 letras").toUpperCase(),
   cpf: z.string().optional(),
   telefone: z.string().optional(),
+  dataNascimento: z.string().max(10).optional(),
 });
 
 router.post("/register", async (req: Request, res: Response) => {
@@ -68,7 +70,9 @@ router.post("/register", async (req: Request, res: Response) => {
     });
   }
 
-  const { email, senha, nome, crm, uf, cpf, telefone } = parse.data;
+  const { email, senha, nome, crm, uf, cpf, telefone, dataNascimento } = parse.data;
+  // Data de nascimento: opcional no cadastro; inválida é simplesmente ignorada (pode ser completada no Perfil)
+  const birthDate = parseBirthDate(dataNascimento);
 
   if (!signupAllowed(email)) {
     return res.status(403).json({
@@ -107,6 +111,7 @@ router.post("/register", async (req: Request, res: Response) => {
         password: passwordHash,
         ...(cpf ? { cpf } : {}),
         ...(telefone ? { phone: telefone } : {}),
+        ...(birthDate ? { birthDate } : {}),
       },
     });
 
@@ -356,7 +361,11 @@ router.get("/me", authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.userId! },
-      select: { id: true, email: true, name: true, crm: true, isVerified: true, createdAt: true },
+      select: {
+        id: true, email: true, name: true, crm: true, isVerified: true, createdAt: true,
+        cpf: true, phone: true, birthDate: true, specialty: true, city: true,
+        workplaceName: true, workplaceAddress: true, workplacePhone: true, workplaceCity: true, workplaceUf: true,
+      },
     });
 
     if (!user) {
@@ -366,6 +375,67 @@ router.get("/me", authenticate, async (req: AuthRequest, res: Response) => {
     return res.json({ success: true, user });
   } catch (err) {
     console.error("me:", err);
+    return res.status(500).json({ error: "Erro interno", code: "INTERNAL_ERROR" });
+  }
+});
+
+// ─── PATCH /api/auth/me ───────────────────────────────────────────────────────
+// Completa os dados profissionais do médico. Campos ausentes não são alterados.
+
+const optText = (max: number) => z.string().trim().max(max).optional();
+const profileSchema = z.object({
+  cpf: optText(14),
+  birthDate: optText(10),
+  phone: optText(20),
+  specialty: optText(100),
+  city: optText(100),
+  workplaceName: optText(150),
+  workplaceAddress: optText(250),
+  workplacePhone: optText(20),
+  workplaceCity: optText(100),
+  workplaceUf: z.string().trim().length(2).toUpperCase().optional().or(z.literal("")),
+});
+
+router.patch("/me", authenticate, async (req: AuthRequest, res: Response) => {
+  const parse = profileSchema.safeParse(req.body);
+  if (!parse.success) {
+    return res.status(400).json({ error: parse.error.errors[0]?.message ?? "Dados inválidos", code: "VALIDATION_ERROR" });
+  }
+  const b = parse.data;
+  const data: Record<string, unknown> = {};
+
+  if (b.cpf !== undefined) {
+    const cpf = onlyDigits(b.cpf);
+    if (!isValidCpf(cpf)) return res.status(400).json({ error: "CPF inválido", code: "INVALID_CPF" });
+    const dono = await prisma.user.findFirst({ where: { cpf, NOT: { id: req.userId! } }, select: { id: true } });
+    if (dono) return res.status(409).json({ error: "CPF já cadastrado", code: "CPF_EXISTS" });
+    data["cpf"] = cpf;
+  }
+  if (b.birthDate !== undefined) {
+    const d = parseBirthDate(b.birthDate);
+    if (!d) return res.status(400).json({ error: "Data de nascimento inválida", code: "INVALID_BIRTH_DATE" });
+    data["birthDate"] = d;
+  }
+  for (const k of ["phone", "specialty", "city", "workplaceName", "workplaceAddress", "workplacePhone", "workplaceCity", "workplaceUf"] as const) {
+    if (b[k] !== undefined) data[k] = b[k] || null;
+  }
+
+  try {
+    const user = await prisma.user.update({
+      where: { id: req.userId! },
+      data,
+      select: {
+        id: true, email: true, name: true, crm: true, isVerified: true, createdAt: true,
+        cpf: true, phone: true, birthDate: true, specialty: true, city: true,
+        workplaceName: true, workplaceAddress: true, workplacePhone: true, workplaceCity: true, workplaceUf: true,
+      },
+    });
+    await prisma.auditLog
+      .create({ data: { userId: req.userId!, action: "PROFILE_UPDATED", resource: "auth", ipAddress: req.ip ?? "unknown", success: true, metadata: { fields: Object.keys(data) } } })
+      .catch(() => {});
+    return res.json({ success: true, user });
+  } catch (err) {
+    console.error("update me:", err);
     return res.status(500).json({ error: "Erro interno", code: "INTERNAL_ERROR" });
   }
 });
