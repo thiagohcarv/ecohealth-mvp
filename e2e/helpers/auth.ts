@@ -10,6 +10,8 @@ export async function setupAuth(page: Page): Promise<void> {
       "eco_user",
       JSON.stringify({ userId: "usr_test", nome: "Dr. Playwright" })
     );
+    // Cadastro completo (CPF + nascimento) já conferido nesta sessão
+    sessionStorage.setItem("eco_profile_ok", "usr_test");
   });
 }
 

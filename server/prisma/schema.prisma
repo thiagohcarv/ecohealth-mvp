@@ -58,6 +58,7 @@ model Patient {
   doctorId      String
   doctor        User           @relation(fields: [doctorId], references: [id], onDelete: Cascade)
   consultations Consultation[]
+  prescriptions Prescription[]
 
   @@index([doctorId])
   @@map("patients")
@@ -81,6 +82,7 @@ model Consultation {
 
   audioRecording AudioRecording?
   soapNote       SoapNote?
+  prescriptions  Prescription[]
 
   @@index([doctorId])
   @@index([patientId])
@@ -95,6 +97,30 @@ enum ConsultationStatus {
   COMPLETED
   FAILED
   SIGNED
+}
+
+// ─── Prescrição Memed ─────────────────────────────────────────────────────────
+// Salva pelo evento prescricaoImpressa; exclusão sincronizada pelo prescricaoExcluida (soft delete)
+model Prescription {
+  id         String    @id @default(cuid())
+  memedId    String    @unique // id da prescrição na Memed
+  payload    String?   @db.Text // JSON do evento, criptografado (AES-256-GCM)
+  itemsCount Int?
+  printedAt  DateTime  @default(now())
+  deletedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  doctorId       String
+  consultationId String
+  consultation   Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  patientId      String
+  patient        Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([doctorId])
+  @@index([consultationId])
+  @@index([patientId])
+  @@map("prescriptions")
 }
 
 // ─── Gravação de áudio ────────────────────────────────────────────────────────

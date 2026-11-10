@@ -35,7 +35,8 @@ test("LGPD + Cadastro: aceite, preenchimento e redirect para /verificar", async 
 
   // Preenche o formulário
   await page.getByPlaceholder("Seu nome completo").fill("Dr. Playwright Teste");
-  await page.getByPlaceholder("000.000.000-00").fill("123.456.789-00");
+  await page.getByPlaceholder("000.000.000-00").fill("390.533.447-05"); // CPF fictício válido
+  await page.getByPlaceholder("DD/MM/AAAA").fill("15/05/1985");
   await page.getByPlaceholder("seuemail@exemplo.com").fill("playwright@ecohealth.com");
   await page.getByPlaceholder("123456").fill("99999");
   await page.getByPlaceholder("Mínimo 6 caracteres").fill("senha123");

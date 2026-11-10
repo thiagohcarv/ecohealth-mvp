@@ -55,9 +55,9 @@ const registerSchema = z.object({
   nome: z.string().min(2, "Nome obrigatório"),
   crm: z.string().min(3, "CRM inválido"),
   uf: z.string().length(2, "UF deve ter 2 letras").toUpperCase(),
-  cpf: z.string().optional(),
+  cpf: z.string().min(11, "CPF obrigatório").max(14),
   telefone: z.string().optional(),
-  dataNascimento: z.string().max(10).optional(),
+  dataNascimento: z.string().min(8, "Data de nascimento obrigatória").max(10),
 });
 
 router.post("/register", async (req: Request, res: Response) => {
@@ -70,9 +70,16 @@ router.post("/register", async (req: Request, res: Response) => {
     });
   }
 
-  const { email, senha, nome, crm, uf, cpf, telefone, dataNascimento } = parse.data;
-  // Data de nascimento: opcional no cadastro; inválida é simplesmente ignorada (pode ser completada no Perfil)
+  const { email, senha, nome, crm, uf, telefone, dataNascimento } = parse.data;
+  // CPF e data de nascimento são obrigatórios (exigidos para emissão de receitas — RDC 1000/25)
+  const cpf = onlyDigits(parse.data.cpf);
+  if (!isValidCpf(cpf)) {
+    return res.status(400).json({ error: "CPF inválido", code: "INVALID_CPF" });
+  }
   const birthDate = parseBirthDate(dataNascimento);
+  if (!birthDate) {
+    return res.status(400).json({ error: "Data de nascimento inválida (use DD/MM/AAAA)", code: "INVALID_BIRTH_DATE" });
+  }
 
   if (!signupAllowed(email)) {
     return res.status(403).json({
@@ -88,7 +95,7 @@ router.post("/register", async (req: Request, res: Response) => {
     const [emailExiste, crmExiste, cpfExiste] = await Promise.all([
       prisma.user.findUnique({ where: { email } }),
       prisma.user.findUnique({ where: { crm: crmFormatado } }),
-      cpf ? prisma.user.findFirst({ where: { cpf } }) : Promise.resolve(null),
+      prisma.user.findFirst({ where: { cpf } }),
     ]);
 
     if (emailExiste) {
@@ -109,9 +116,9 @@ router.post("/register", async (req: Request, res: Response) => {
         name: nomeSanitizado,
         crm: crmFormatado,
         password: passwordHash,
-        ...(cpf ? { cpf } : {}),
+        cpf,
+        birthDate,
         ...(telefone ? { phone: telefone } : {}),
-        ...(birthDate ? { birthDate } : {}),
       },
     });
 

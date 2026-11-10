@@ -257,6 +257,23 @@ Para endpoints autenticados, clique em **Authorize** no Swagger e informe `Beare
 
 ---
 
+## Prescrição digital Memed
+
+Integração conforme os guias **Primeiros passos** e **Boas Práticas de Integração** da Memed. Fica **desligada** enquanto as variáveis `MEMED_API_KEY` e `MEMED_SECRET_KEY` não estiverem definidas no backend: nesse caso a seção de prescrição não aparece na consulta.
+
+| Parte | Arquivo | O que faz |
+|-------|---------|-----------|
+| Backend | `server/src/lib/memed.ts` | Consulta/cadastra o prescritor (external_id, nome, sobrenome, CPF, data de nascimento — RDC 1000/25 —, CRM+UF, especialidade e cidade quando encontradas) e obtém o token a cada atendimento. Chaves só no servidor. |
+| Backend | `server/src/routes/memed.ts` | `/api/memed/config`, `/token` (+ dados do `setWorkplace`), dados do paciente para `setPaciente` (idExterno com prefixo), salvar (`prescricaoImpressa`) e excluir (`prescricaoExcluida`, soft delete) receitas. |
+| Banco | migration `20261110120000_add_prescriptions` | Tabela `prescriptions` (payload do evento criptografado). |
+| Frontend | `lib/memed.ts` | Script injetado 1x por sessão (`id="memed-prescricao-script"` + guarda `getElementById`), listeners 1x dentro de `core:moduleInit`, `setWorkplace`, abertura com `await setPaciente` + `await module.show()`. |
+| Frontend | `components/memed/MemedPrescricao.tsx` | Seção "Prescrição" na tela da consulta (`/historico/[id]`): botão e receitas salvas. |
+| Frontend | `components/DadosPrescritorForm.tsx` | No Perfil: CPF, data de nascimento, especialidade, cidade e local de atendimento do médico. |
+
+**Ativar:** no Render, definir `MEMED_API_KEY`, `MEMED_SECRET_KEY` e `MEMED_EXTERNAL_PREFIX` (homologação: chaves públicas da documentação). Em produção, também `MEMED_API_URL` e `MEMED_SCRIPT_URL` informadas pela Memed. A homologação da Memed fica indisponível das 0h às 6h em dias úteis e nos fins de semana.
+
+---
+
 ## Estrutura do Projeto
 
 ```

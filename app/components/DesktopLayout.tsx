@@ -4,10 +4,11 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { EcoHealthLogo } from "@/components/EcoHealthLogo";
+import { api, type MeResponse } from "@/lib/api";
 import { clearAuth, getToken, getUser, type StoredUser } from "@/lib/auth";
 
 // Páginas sem sidebar (autenticação / públicas)
-const PUBLIC_PATHS = ["/", "/login", "/cadastro", "/verificar", "/lgpd"];
+const PUBLIC_PATHS = ["/", "/login", "/cadastro", "/verificar", "/lgpd", "/completar-cadastro"];
 
 const NAV = [
   {
@@ -93,7 +94,29 @@ export function DesktopLayout({ children }: { children: React.ReactNode }) {
       router.replace("/login");
       return;
     }
-    setUser(getUser());
+    const stored = getUser();
+    setUser(stored);
+
+    // Cadastro completo (CPF + data de nascimento) é obrigatório para usar o sistema.
+    // Conferido uma vez por sessão do navegador; o backend também bloqueia (PROFILE_INCOMPLETE).
+    try {
+      if (stored?.userId && sessionStorage.getItem("eco_profile_ok") === stored.userId) return;
+    } catch {
+      /* sessionStorage indisponível: confere pelo servidor */
+    }
+    api.get<MeResponse>("/api/auth/me").then((r) => {
+      if (r.error || !r.data) return; // falha de rede: não decide aqui
+      const u = r.data.user;
+      if (u.cpf && u.birthDate) {
+        try {
+          sessionStorage.setItem("eco_profile_ok", u.id);
+        } catch {
+          /* ignora */
+        }
+      } else {
+        router.replace(`/completar-cadastro?next=${encodeURIComponent(pathname)}`);
+      }
+    });
   }, [pathname, isPublic, router]);
 
   function handleLogout() {

@@ -21,6 +21,9 @@ async function main() {
       email,
       name: "Dr. Teste EcoHealth",
       crm: "SP-000000",
+      // CPF e nascimento são obrigatórios para acessar o sistema (CPF fictício válido, apenas para teste)
+      cpf: process.env["SEED_USER_CPF"] ?? "39053344705",
+      birthDate: new Date(Date.UTC(1980, 0, 1)),
       password: passwordHash,
       isVerified: true,
     },

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MobileScreen } from "@/components/layout/MobileScreen";
 import { SignButton, SignedBadge } from "@/components/ui/SignButton";
+import { MemedPrescricao } from "@/components/memed/MemedPrescricao";
 import { api } from "@/lib/api";
 
 type SoapKey = "subjective" | "objective" | "assessment" | "plan";
@@ -297,6 +298,9 @@ export default function ConsultaDetailPage({ params }: { params: { id: string } 
                 </p>
               </>
             )}
+
+            {/* Prescrição Memed (aparece quando a integração está configurada no backend) */}
+            <MemedPrescricao consultationId={params.id} />
 
             {/* Status badge */}
             {signedAt ? (

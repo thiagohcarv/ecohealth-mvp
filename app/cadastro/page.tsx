@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/Input";
 import { MobileScreen } from "@/components/layout/MobileScreen";
 import { api, type AuthResponse } from "@/lib/api";
 import { setPendingEmail } from "@/lib/auth";
+import { cpfValido, dataNascimentoValida } from "@/lib/validacao";
 
 const UF_LIST = ["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"];
 
@@ -52,6 +53,9 @@ export default function CadastroPage() {
     const e: Partial<Record<keyof CadastroForm, string>> = {};
     if (!form.nome.trim()) e.nome = "Nome obrigatório";
     if (!form.cpf.trim()) e.cpf = "CPF obrigatório";
+    else if (!cpfValido(form.cpf)) e.cpf = "CPF inválido";
+    if (!form.dataNascimento.trim()) e.dataNascimento = "Data de nascimento obrigatória";
+    else if (!dataNascimentoValida(form.dataNascimento)) e.dataNascimento = "Use o formato DD/MM/AAAA";
     if (!form.email.trim()) e.email = "Email obrigatório";
     if (!form.crm.trim()) e.crm = "CRM obrigatório";
     if (!form.senha || form.senha.length < 6) e.senha = "Mínimo 6 caracteres";
@@ -71,9 +75,9 @@ export default function CadastroPage() {
       nome: sanitizeNome(form.nome),
       crm: form.crm,
       uf: form.uf,
-      cpf: form.cpf || undefined,
+      cpf: form.cpf,
       telefone: form.telefone || undefined,
-      dataNascimento: form.dataNascimento || undefined,
+      dataNascimento: form.dataNascimento,
     });
     setLoading(false);
 
@@ -184,6 +188,7 @@ export default function CadastroPage() {
               placeholder="DD/MM/AAAA"
               value={form.dataNascimento}
               onChange={set("dataNascimento")}
+              error={errors.dataNascimento}
               rightIcon={<CalendarIcon />}
               autoComplete="bday"
             />

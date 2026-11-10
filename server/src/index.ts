@@ -11,8 +11,11 @@ import consultationsRouter from "./routes/consultations";
 import billingRouter from "./routes/billing";
 import patientsRouter from "./routes/patients";
 import auditRouter from "./routes/audit";
+import memedRouter from "./routes/memed";
 import { swaggerSpec } from "./swagger";
 import { LOAD_TEST_MODE } from "./lib/loadTestMode";
+import { authenticate } from "./middleware/auth";
+import { profileRequired } from "./middleware/profileRequired";
 
 if (LOAD_TEST_MODE) {
   console.warn(
@@ -117,10 +120,12 @@ if (process.env["NODE_ENV"] !== "production" || process.env["ENABLE_DOCS"] === "
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 app.use("/api/auth", authLimiter, authRouter);
-app.use("/api/consultations", consultationsRouter);
+// Dados clínicos: exigem cadastro completo (CPF + data de nascimento)
+app.use("/api/consultations", authenticate, profileRequired, consultationsRouter);
 app.use("/api/billing", billingRouter);
-app.use("/api/patients", patientsRouter);
+app.use("/api/patients", authenticate, profileRequired, patientsRouter);
 app.use("/api/audit", auditRouter);
+app.use("/api/memed", authenticate, profileRequired, memedRouter);
 
 // ─── 404 ──────────────────────────────────────────────────────────────────────
 app.use((_req, res) => {

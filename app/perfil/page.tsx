@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { MobileScreen } from "@/components/layout/MobileScreen";
 import { BottomNav } from "@/components/ui/BottomNav";
+import { DadosPrescritorForm } from "@/components/DadosPrescritorForm";
 import { getUser } from "@/lib/auth";
 import { api, type ConsultationListResponse, type MeResponse } from "@/lib/api";
 
@@ -182,6 +183,9 @@ export default function PerfilPage() {
             <InfoRow label="Membro desde" value="Junho 2026" />
           </div>
         </div>
+
+        {/* Dados para receitas digitais */}
+        <DadosPrescritorForm />
 
         {/* CIDs mais frequentes */}
         <div className="px-6 mb-5">
