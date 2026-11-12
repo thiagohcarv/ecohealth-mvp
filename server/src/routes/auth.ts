@@ -8,11 +8,16 @@ import { authenticate, AuthRequest } from "../middleware/auth";
 import { revokeToken } from "../lib/tokenBlacklist";
 import { encryptField } from "../lib/crypto";
 import { isValidCpf, onlyDigits, parseBirthDate } from "../lib/validators";
+import { emailEnabled, sendOtpEmail } from "../lib/email";
+import crypto from "crypto";
 
 const router = Router();
 
 // OTP em memória — substituir por Redis em produção
-const otpStore = new Map<string, { code: string; expiresAt: number }>();
+const otpStore = new Map<string, { code: string; expiresAt: number; attempts: number; sentAt: number }>();
+const OTP_TTL_MS = 10 * 60 * 1000;
+const OTP_MAX_ATTEMPTS = 5;
+const OTP_RESEND_MS = 60 * 1000;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -43,8 +48,19 @@ function signupAllowed(email: string): boolean {
 }
 
 function generateOtp(): string {
-  // Mock: fixo para alpha. Em produção: Math.floor(100000 + Math.random() * 900000).toString()
-  return "123456";
+  // Com e-mail configurado: código aleatório de 6 dígitos. Sem e-mail (alpha): código fixo 123456.
+  return emailEnabled() ? crypto.randomInt(100000, 1000000).toString() : "123456";
+}
+
+/** Gera, guarda e envia o código. Retorna false se o e-mail estava configurado e o envio falhou. */
+async function issueOtp(email: string): Promise<boolean> {
+  const code = generateOtp();
+  otpStore.set(email, { code, expiresAt: Date.now() + OTP_TTL_MS, attempts: 0, sentAt: Date.now() });
+  if (!emailEnabled()) {
+    console.log(`[DEV] OTP para ${email}: ${code}`);
+    return true;
+  }
+  return sendOtpEmail(email, code);
 }
 
 // ─── POST /api/auth/register ──────────────────────────────────────────────────
@@ -122,17 +138,17 @@ router.post("/register", async (req: Request, res: Response) => {
       },
     });
 
-    // Gera e armazena OTP
-    const otp = generateOtp();
-    otpStore.set(email, { code: otp, expiresAt: Date.now() + 10 * 60 * 1000 });
-
-    // TODO: enviar email real com OTP (Resend, SendGrid, etc.)
-    console.log(`[DEV] OTP para ${email}: ${otp}`);
+    // Gera, armazena e envia o código de verificação
+    const enviado = await issueOtp(email);
 
     return res.status(201).json({
       success: true,
       userId: user.id,
-      message: "Código de verificação enviado para o email.",
+      // true = modo alpha (código fixo, nada enviado). O frontend só mostra a dica do código neste caso.
+      alphaOtp: !emailEnabled(),
+      message: enviado
+        ? "Código de verificação enviado para o email."
+        : "Conta criada, mas não conseguimos enviar o código agora. Use \"Reenviar código\".",
     });
   } catch (err) {
     console.error("register:", err);
@@ -217,14 +233,21 @@ router.post("/verify-otp", async (req: Request, res: Response) => {
 
   const { email, otp } = parse.data;
 
-  // Verifica OTP (com fallback mock para alpha)
+  // Verifica OTP. O atalho "123456" sem código guardado só existe no modo alpha (sem e-mail configurado).
   const stored = otpStore.get(email);
-  const isValid =
+  if (stored && stored.attempts >= OTP_MAX_ATTEMPTS) {
+    otpStore.delete(email);
+    return res.status(429).json({ error: "Muitas tentativas. Peça um novo código.", code: "OTP_TOO_MANY_ATTEMPTS" });
+  }
+  const codigoOk =
     stored !== undefined
-      ? stored.code === otp && stored.expiresAt > Date.now()
-      : otp === "123456"; // fallback mock alpha
+      ? stored.expiresAt > Date.now() &&
+        stored.code.length === otp.length &&
+        crypto.timingSafeEqual(Buffer.from(stored.code), Buffer.from(otp))
+      : !emailEnabled() && otp === "123456";
 
-  if (!isValid) {
+  if (!codigoOk) {
+    if (stored) stored.attempts += 1;
     return res.status(400).json({ error: "Código inválido ou expirado", code: "INVALID_OTP" });
   }
 
@@ -279,10 +302,15 @@ router.post("/refresh-otp", async (req: Request, res: Response) => {
     return res.status(404).json({ error: "Usuário não encontrado", code: "USER_NOT_FOUND" });
   }
 
-  const otp = generateOtp();
-  otpStore.set(email, { code: otp, expiresAt: Date.now() + 10 * 60 * 1000 });
+  const anterior = otpStore.get(email);
+  if (anterior && Date.now() - anterior.sentAt < OTP_RESEND_MS) {
+    return res.status(429).json({ error: "Aguarde um minuto para pedir um novo código.", code: "OTP_RESEND_TOO_SOON" });
+  }
 
-  console.log(`[DEV] Novo OTP para ${email}: ${otp}`);
+  const enviado = await issueOtp(email);
+  if (!enviado) {
+    return res.status(502).json({ error: "Não foi possível enviar o código agora. Tente novamente em instantes.", code: "EMAIL_SEND_FAILED" });
+  }
 
   return res.json({ success: true, message: "Novo código enviado." });
 });

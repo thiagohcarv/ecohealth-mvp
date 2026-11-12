@@ -22,3 +22,11 @@ export function dataNascimentoValida(v: string): boolean {
   const dt = new Date(Date.UTC(a, mes - 1, d));
   return dt.getUTCFullYear() === a && dt.getUTCMonth() === mes - 1 && dt.getUTCDate() === d && a >= 1900 && dt <= new Date();
 }
+
+/** Remove "Dr.", "Dra.", "Dr(a).", "Doutor(a)" do início do nome (contas antigas têm o título salvo). */
+export function nomeSemTitulo(nome: string): string {
+  let s = nome.trim();
+  const titulo = /^(dr\(a\)|dra|dr|doutora|doutor)\.?\s+/i;
+  while (titulo.test(s)) s = s.replace(titulo, "").trim();
+  return s.replace(/\s+/g, " ");
+}

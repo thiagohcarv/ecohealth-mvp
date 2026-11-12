@@ -33,3 +33,14 @@ export function isValidCpf(cpf: string): boolean {
   };
   return calc(9) === Number(c[9]) && calc(10) === Number(c[10]);
 }
+
+/**
+ * Remove títulos do início do nome ("Dr.", "Dra.", "Dr(a).", "Doutor", "Doutora"), inclusive repetidos.
+ * Contas antigas podem ter o nome salvo com o título; o cadastro de prescritor exige nome civil.
+ */
+export function nomeSemTitulo(nome: string): string {
+  let s = nome.trim();
+  const titulo = /^(dr\(a\)|dra|dr|doutora|doutor)\.?\s+/i;
+  while (titulo.test(s)) s = s.replace(titulo, "").trim();
+  return s.replace(/\s+/g, " ");
+}

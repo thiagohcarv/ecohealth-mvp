@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { MobileScreen } from "@/components/layout/MobileScreen";
 import { api, type AuthResponse } from "@/lib/api";
 import { setToken, setUser, getPendingEmail, clearPendingEmail } from "@/lib/auth";
+import { LGPD_VERSION } from "@/lib/consent";
 
 const DIGITS = 6;
 
@@ -18,6 +19,14 @@ export default function VerificarPage() {
   const [resending, setResending] = useState(false);
   const [error, setError] = useState("");
   const [resendMsg, setResendMsg] = useState("");
+  const [alphaOtp, setAlphaOtp] = useState(false);
+  useEffect(() => {
+    try {
+      setAlphaOtp(sessionStorage.getItem("eco_otp_alpha") === "1");
+    } catch {
+      /* sem armazenamento: não mostra a dica */
+    }
+  }, []);
   const refs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
@@ -65,7 +74,7 @@ export default function VerificarPage() {
       setUser({ userId, nome });
       clearPendingEmail();
 
-      if (typeof window !== "undefined" && localStorage.getItem("eco_lgpd_pending") === "2.0") {
+      if (typeof window !== "undefined" && localStorage.getItem("eco_lgpd_pending") === LGPD_VERSION) {
         const consentRes = await api.post("/api/auth/lgpd-consent", { acceptLgpd: true, acceptTerms: true });
         if ("error" in consentRes) {
           // Não conseguiu registrar o aceite: volta para a tela de aceite
@@ -127,7 +136,9 @@ export default function VerificarPage() {
               {email ? <span className="font-semibold text-secondary-500"> {email}</span> : " o seu email"}.
             </p>
             {/* Alpha hint */}
-            <p className="text-[10px] text-secondary-300 italic">Alpha: use o código <strong>123456</strong></p>
+            {alphaOtp && (
+              <p className="text-[10px] text-secondary-300 italic">Alpha: use o código <strong>123456</strong></p>
+            )}
           </div>
 
           {/* OTP inputs */}

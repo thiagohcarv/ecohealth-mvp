@@ -5,7 +5,7 @@ import { useState } from "react";
 import { MobileScreen } from "@/components/layout/MobileScreen";
 import { api } from "@/lib/api";
 
-const LGPD_VERSION = "2.0"; // manter igual a CURRENT_CONSENT_VERSION (server/src/lib/consent.ts)
+import { LGPD_VERSION } from "@/lib/consent";
 
 export default function LgpdPage() {
   const router = useRouter();
@@ -84,7 +84,9 @@ export default function LgpdPage() {
                 <li><strong>Gravação de áudio</strong> das consultas: usada apenas para gerar a transcrição e <strong>descartada em seguida. A EcoHealth não armazena o áudio.</strong></li>
                 <li><strong>Transcrição automática</strong> de voz gerada por inteligência artificial (OpenAI Whisper), armazenada de forma criptografada.</li>
                 <li><strong>Dados de saúde dos pacientes</strong> presentes na transcrição e nas notas SOAP, armazenados de forma criptografada (dados sensíveis, art. 11 LGPD).</li>
-                <li><strong>Dados cadastrais do médico</strong>: nome, CRM, e-mail, CPF.</li>
+                <li><strong>Dados cadastrais do médico</strong>: nome, CRM e UF, e-mail, CPF, data de nascimento, telefone, especialidade, cidade e local de atendimento.</li>
+                <li><strong>Dados cadastrais dos pacientes</strong> informados pelo médico: nome, CPF, data de nascimento, sexo, telefone e e-mail.</li>
+                <li><strong>Receitas digitais</strong> emitidas pelo médico: identificação da receita e seus dados, armazenados de forma criptografada no prontuário.</li>
                 <li><strong>Dados de acesso</strong>: endereço IP, tipo de dispositivo, horário de conexão.</li>
               </ul>
             </Section>
@@ -93,6 +95,8 @@ export default function LgpdPage() {
               <ul className="list-disc pl-4 flex flex-col gap-1.5">
                 <li>Geração automatizada de notas SOAP e documentação clínica.</li>
                 <li>Armazenamento de histórico de consultas para o médico usuário.</li>
+                <li>Emissão de receitas digitais por meio da plataforma Memed.</li>
+                <li>Envio de códigos de verificação de acesso por e-mail.</li>
                 <li>Assinatura digital de prontuários (mock ICP-Brasil nesta versão alpha).</li>
                 <li>Melhoria contínua dos modelos de IA utilizados, de forma anonimizada.</li>
               </ul>
@@ -116,6 +120,17 @@ export default function LgpdPage() {
                 <li>
                   <strong>OpenAI</strong> — o áudio é enviado apenas para transcrição (Whisper) e o texto para estruturação de notas (GPT-4o),
                   regida pela Política de Privacidade OpenAI Business.
+                </li>
+                <li>
+                  <strong>Memed</strong> — plataforma de prescrição digital. Ao emitir uma receita, são enviados à Memed os
+                  dados do médico (nome, CPF, data de nascimento, CRM e UF, e-mail, telefone, especialidade, cidade e local de
+                  atendimento) e do paciente (nome, CPF, data de nascimento, sexo, telefone e e-mail). A receita é emitida,
+                  assinada e armazenada pela Memed, conforme a política de privacidade dela; a EcoHealth guarda no prontuário
+                  apenas o registro da receita, de forma criptografada.
+                </li>
+                <li>
+                  <strong>Provedor de e-mail</strong> — recebe apenas o endereço de e-mail do médico, para envio do código de
+                  verificação de acesso.
                 </li>
                 <li>Não vendemos nem cedemos dados a terceiros para fins publicitários.</li>
               </ul>
@@ -164,9 +179,14 @@ export default function LgpdPage() {
                   pessoal e intransferível; não compartilhe suas credenciais.
                 </li>
                 <li>
+                  <strong>Receitas digitais:</strong> o médico é o único responsável pelo conteúdo das prescrições.
+                  As receitas são emitidas no módulo da Memed e assinadas com o certificado digital do próprio
+                  médico; o uso desse módulo também está sujeito aos termos da Memed.
+                </li>
+                <li>
                   <strong>Versão alpha:</strong> funcionalidades podem mudar ou ficar indisponíveis. A
-                  assinatura digital é simulada, <strong>sem validade jurídica</strong>, e não deve ser
-                  usada como documento oficial.
+                  assinatura digital do prontuário (PDF da nota clínica) é simulada, <strong>sem validade
+                  jurídica</strong>, e não deve ser usada como documento oficial.
                 </li>
                 <li>
                   <strong>Uso adequado:</strong> é proibido inserir dados para fins alheios à prática
@@ -176,7 +196,7 @@ export default function LgpdPage() {
             </Section>
 
             <div className="text-[11px] text-secondary-400 border-t border-secondary-100 pt-3 mt-1">
-              Versão {LGPD_VERSION} · Vigente a partir de 29/10/2026 ·{" "}
+              Versão {LGPD_VERSION} · Vigente a partir de 11/11/2026 ·{" "}
               <strong>EcoHealth Tecnologia Ltda.</strong>
             </div>
           </div>

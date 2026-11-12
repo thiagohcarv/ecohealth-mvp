@@ -6,6 +6,7 @@ import { BottomNav } from "@/components/ui/BottomNav";
 import { MobileScreen } from "@/components/layout/MobileScreen";
 import { api, type ConsultationListResponse, type ConsultationItem } from "@/lib/api";
 import { getUser } from "@/lib/auth";
+import { nomeSemTitulo } from "@/lib/validacao";
 
 type Status = "PENDING" | "RECORDING" | "PROCESSING" | "COMPLETED" | "FAILED" | "SIGNED";
 
@@ -71,7 +72,7 @@ export default function DashboardPage() {
   const [firstName, setFirstName] = useState("Doutor(a)");
 
   useEffect(() => {
-    setFirstName(getUser()?.nome?.split(" ")[0] ?? "Doutor(a)");
+    setFirstName(nomeSemTitulo(getUser()?.nome ?? "").split(" ")[0] || "Doutor(a)");
     api.get<ConsultationListResponse>("/api/consultations?limit=50").then((r) => {
       if (r.error || !r.data) { setOffline(true); return; }
       setConsultas(r.data.consultations.map(toConsulta));

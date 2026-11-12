@@ -107,6 +107,7 @@ export interface AuthResponse {
   nome?: string;
   crm?: string;
   message?: string;
+  alphaOtp?: boolean;
 }
 
 export interface ConsultationListResponse {

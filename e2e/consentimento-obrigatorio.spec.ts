@@ -46,7 +46,7 @@ test("Sem aceite: iniciar consulta leva a /lgpd e volta após aceitar os dois it
     return route.fulfill({
       status: 201,
       contentType: "application/json",
-      body: JSON.stringify({ success: true, consent: { id: "c1", version: "2.0" } }),
+      body: JSON.stringify({ success: true, consent: { id: "c1", version: "2.1" } }),
     });
   });
 

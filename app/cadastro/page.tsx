@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/Input";
 import { MobileScreen } from "@/components/layout/MobileScreen";
 import { api, type AuthResponse } from "@/lib/api";
 import { setPendingEmail } from "@/lib/auth";
+import { LGPD_VERSION } from "@/lib/consent";
 import { cpfValido, dataNascimentoValida } from "@/lib/validacao";
 
 const UF_LIST = ["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"];
@@ -44,7 +45,7 @@ export default function CadastroPage() {
   const [apiError, setApiError] = useState("");
 
   useEffect(() => {
-    if (typeof window !== "undefined" && localStorage.getItem("eco_lgpd_pending") !== "2.0") {
+    if (typeof window !== "undefined" && localStorage.getItem("eco_lgpd_pending") !== LGPD_VERSION) {
       router.replace("/lgpd");
     }
   }, [router]);
@@ -87,6 +88,12 @@ export default function CadastroPage() {
     }
 
     setPendingEmail(form.email);
+    try {
+      // Modo alpha (código fixo): a tela de verificação mostra a dica do código
+      sessionStorage.setItem("eco_otp_alpha", result.data?.alphaOtp ? "1" : "0");
+    } catch {
+      /* armazenamento indisponível: a dica não aparece */
+    }
     router.push("/verificar");
   }
 

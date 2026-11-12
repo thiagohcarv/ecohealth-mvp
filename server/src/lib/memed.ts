@@ -9,7 +9,7 @@
  * Sem MEMED_API_KEY/MEMED_SECRET_KEY a integração fica DESLIGADA e o MVP funciona como antes.
  */
 
-import { isValidCpf, onlyDigits } from "./validators";
+import { isValidCpf, nomeSemTitulo, onlyDigits } from "./validators";
 
 export { onlyDigits };
 
@@ -79,7 +79,7 @@ export function missingPrescriberFields(u: PrescriberUser): string[] {
   if (!u.cpf || !isValidCpf(u.cpf)) missing.push("cpf");
   if (!u.birthDate) missing.push("birthDate");
   if (!parseCrm(u.crm)) missing.push("crm");
-  if (u.name.trim().split(/\s+/).length < 2) missing.push("sobrenome");
+  if (nomeSemTitulo(u.name).split(" ").length < 2) missing.push("sobrenome");
   return missing;
 }
 
@@ -151,7 +151,8 @@ export async function getPrescriberToken(cfg: MemedConfig, user: PrescriberUser)
   }
 
   const crm = parseCrm(user.crm)!;
-  const [nome, ...resto] = user.name.trim().split(/\s+/);
+  // Nome civil, sem "Dr./Dra." (contas antigas podem ter o título salvo no nome)
+  const [nome, ...resto] = nomeSemTitulo(user.name).split(" ");
   const [especialidadeId, cidadeId] = await Promise.all([
     lookupId(cfg, "especialidades", user.specialty),
     lookupId(cfg, "cidades", user.city),

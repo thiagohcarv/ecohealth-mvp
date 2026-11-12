@@ -102,6 +102,11 @@ npm run test:e2e:ui           # interface visual do Playwright
 | `AWS_SECRET_ACCESS_KEY` | Não | Credencial AWS S3 (Sprint 2) |
 | `S3_BUCKET_NAME` | Não | Nome do bucket S3 (padrão: `ecohealth-audio-dev`) |
 | `NEXT_PUBLIC_APP_URL` | Não | URL do frontend para CORS (padrão: `http://localhost:3000`) |
+| `MEMED_API_KEY` / `MEMED_SECRET_KEY` | Não | Prescrição Memed; sem elas a seção de prescrição não aparece |
+| `MEMED_EXTERNAL_PREFIX` | Não | Prefixo dos ids externos na Memed (padrão: `ecohealth`) |
+| `MEMED_API_URL` / `MEMED_SCRIPT_URL` | Não | URLs da Memed em produção (padrão: homologação) |
+| `RESEND_API_KEY` / `EMAIL_FROM` | Não | Envio real do código de verificação; sem elas, código fixo `123456` |
+| `SIGNUP_ALLOWLIST` | Produção | E-mails/domínios liberados para cadastro (alpha por convite) |
 
 > **Sem `OPENAI_API_KEY`:** transcrição e geração de SOAP retornam dados mockados. O fluxo completo do produto funciona para demonstração sem nenhuma chave configurada.
 
@@ -117,7 +122,7 @@ npm run test:e2e:ui           # interface visual do Playwright
 2. Médico cria conta em /cadastro
    └── Preenche nome, CRM, UF, email, senha
        └── OTP de 6 dígitos enviado ao email
-           └── Alpha: código fixo 123456
+           └── Sem e-mail configurado (alpha): código fixo 123456
 
 3. Verifica email em /verificar
    └── Digita OTP → conta verificada → JWT emitido
@@ -172,7 +177,7 @@ Para endpoints autenticados, clique em **Authorize** no Swagger e informe `Beare
 |---------|--------|-----------|
 | Cadastro de médico | ✅ Feito | |
 | Login com email + senha | ✅ Feito | |
-| OTP por email | ⚠️ Mock | Código fixo `123456` em alpha |
+| OTP por email | ⚠️ Configurável | Envio real via Resend com `RESEND_API_KEY` + `EMAIL_FROM`; sem elas, código fixo `123456` (alpha) |
 | JWT auth | ✅ Feito | |
 | LGPD consent log | ✅ Feito | IP + User-Agent + timestamp |
 
@@ -203,57 +208,43 @@ Para endpoints autenticados, clique em **Authorize** no Swagger e informe `Beare
 | Swagger / OpenAPI | ✅ Feito | `/api/docs` |
 | Testes E2E (Playwright) | ✅ Feito | 5 testes dos fluxos críticos |
 | Armazenamento S3 | ❌ Faltando | Sprint 2 |
-| Email transacional | ❌ Faltando | Sprint 2 (Resend) |
+| Email transacional | ⚠️ Configurável | Código de verificação via Resend (ver variáveis) |
 | Stripe pagamentos reais | ⚠️ Mock | Webhook e checkout mock |
-| Deploy produção | ⚠️ Configurado | Vercel (frontend) + Render (backend) — ver [Deploy em Produção](#deploy-em-produção) |
+| Deploy produção | ✅ Feito | Vercel (frontend) + Railway (backend + Postgres) — ver [Deploy em Produção](#deploy-em-produção) |
 
 ---
 
 ## Deploy em Produção
 
-| Camada | Plataforma |
-|--------|-----------|
-| Frontend | [Vercel](https://vercel.com) |
-| Backend | [Render](https://render.com) (Web Service, Node.js) |
-| Banco de dados | PostgreSQL (Render Postgres ou externo — Supabase, Neon, RDS) |
+| Camada | Plataforma | Endereço |
+|--------|-----------|----------|
+| Frontend | [Vercel](https://vercel.com) | `https://ecohealth-mvp.vercel.app` |
+| Backend | [Railway](https://railway.com) — serviço `ecohealth-mvp` (Node, US West) | `https://ecohealth-mvp-production.up.railway.app` |
+| Banco de dados | PostgreSQL no mesmo projeto Railway (com volume) | interno |
 
-### 1. Backend no Render
+> O arquivo `server/render.yaml` é legado (uma configuração alternativa para o Render); o deploy em uso é o Railway.
 
-1. Crie um banco PostgreSQL gerenciado (Render → New → PostgreSQL) ou use um externo (Supabase/Neon/RDS) e copie a connection string (`Internal Database URL` se o banco for do próprio Render, na mesma região do serviço).
-2. No Render, **New → Blueprint** e aponte para este repositório — ele detecta `server/render.yaml` automaticamente e já configura root directory, build e start commands. Alternativamente, **New → Web Service** manual com:
-   - **Root Directory:** `server`
-   - **Build Command:** `npm install && npm run build`
-   - **Start Command:** `npx prisma migrate deploy && npm start`
+### Backend no Railway
 
-   (O `server/Procfile` cobre o mesmo start command como fallback, caso a plataforma não leia `render.yaml`.)
-3. Em **Environment**, adicione as variáveis — lista completa e comentada em `server/.env.production.example`. Mínimo obrigatório:
-   - `DATABASE_URL`
-   - `JWT_SECRET` — gere com `openssl rand -hex 32`
-   - `ENCRYPTION_KEY` — gere com `openssl rand -hex 32` (nunca reaproveite a de dev)
-   - `NODE_ENV=production`
-   - `PORT=10000`
-   - `ALLOWED_ORIGINS` — URL do frontend no Vercel (preencha depois do passo 2 abaixo)
-4. Deploy. O `startCommand` roda `prisma migrate deploy` automaticamente antes de iniciar o servidor, aplicando as migrations pendentes.
-5. Confirme: `https://<seu-serviço>.onrender.com/health` deve responder `{"status":"ok",...}`.
-6. (Opcional) Crie um usuário de teste em produção: no **Shell** do painel do Render, rode `npm run db:seed` (usa `SEED_USER_EMAIL`/`SEED_USER_PASSWORD` se definidos, senão um padrão de demonstração — ver `server/prisma/seed.ts`).
+- Deploy automático a cada push na `main` (integração GitHub do Railway).
+- O start segue o `server/Procfile`: `npx prisma migrate deploy && npm start` — as migrações pendentes são aplicadas antes de subir. Confira em **Deployments → View logs**, buscando por `migration`.
+- Variáveis em **serviço → Variables** (lista comentada em `server/.env.production.example`). Mínimo obrigatório: `DATABASE_URL` (referência ao Postgres do projeto), `JWT_SECRET`, `ENCRYPTION_KEY`, `NODE_ENV=production`, `ALLOWED_ORIGINS` (URL da Vercel, sem barra final). Após alterar variáveis, clique em **Deploy** para aplicar.
+- Saúde: `GET /health` deve responder `{"status":"ok",...}`.
+- Usuário de teste: no **Console** do serviço, `npm run db:seed` (usa `SEED_USER_EMAIL`/`SEED_USER_PASSWORD`/`SEED_USER_CPF` se definidos).
 
-### 2. Frontend no Vercel
+### Frontend na Vercel
 
-1. **Add New → Project** e importe este repositório.
-2. O Vercel detecta o Next.js automaticamente na raiz (`vercel.json` já configura framework/build/install). Mantenha o **Root Directory** como a raiz do monorepo — o backend em `server/` é ignorado no build via `.vercelignore`.
-3. Configure as variáveis de ambiente do projeto:
-   - `NEXT_PUBLIC_API_URL` = URL pública do backend no Render (ex.: `https://ecohealth-api.onrender.com`)
-   - `NEXT_PUBLIC_APP_URL` = URL do próprio deploy no Vercel (ex.: `https://ecohealth.vercel.app`)
-4. Deploy.
-5. Volte ao Render e defina `ALLOWED_ORIGINS` com a URL final do Vercel (aceita múltiplas, separadas por vírgula — útil para incluir domínio de preview + produção).
+- Deploy automático a cada push na `main`. Root Directory = raiz do repositório (o `server/` é ignorado via `.vercelignore`).
+- Variáveis: `NEXT_PUBLIC_API_URL` = URL do backend no Railway; `NEXT_PUBLIC_APP_URL` = URL da própria Vercel.
 
-### 3. Checklist pós-deploy
+### Checklist pós-deploy
 
 - [ ] `GET /health` no backend responde `200`
-- [ ] Cadastro/login funcionam do frontend contra o backend em produção, sem erros de CORS no console
-- [ ] `ALLOWED_ORIGINS` no Render inclui a URL exata do Vercel (`https://`, sem barra final)
+- [ ] Cadastro/login funcionam sem erros de CORS no console
+- [ ] `ALLOWED_ORIGINS` no Railway inclui a URL exata da Vercel (`https://`, sem barra final)
 - [ ] `JWT_SECRET` e `ENCRYPTION_KEY` são valores únicos gerados para produção
-- [ ] `AWS_*` configuradas se o volume de áudio não puder depender do disco efêmero do Render
+- [ ] `LOAD_TEST_MODE` ausente ou `false` em produção
+- [ ] PDFs assinados ficam em `/tmp` do servidor, que é apagado a cada deploy no Railway (pendente: armazenamento persistente)
 
 ---
 
@@ -270,7 +261,7 @@ Integração conforme os guias **Primeiros passos** e **Boas Práticas de Integr
 | Frontend | `components/memed/MemedPrescricao.tsx` | Seção "Prescrição" na tela da consulta (`/historico/[id]`): botão e receitas salvas. |
 | Frontend | `components/DadosPrescritorForm.tsx` | No Perfil: CPF, data de nascimento, especialidade, cidade e local de atendimento do médico. |
 
-**Ativar:** no Render, definir `MEMED_API_KEY`, `MEMED_SECRET_KEY` e `MEMED_EXTERNAL_PREFIX` (homologação: chaves públicas da documentação). Em produção, também `MEMED_API_URL` e `MEMED_SCRIPT_URL` informadas pela Memed. A homologação da Memed fica indisponível das 0h às 6h em dias úteis e nos fins de semana.
+**Ativar:** no Railway (serviço → Variables), definir `MEMED_API_KEY`, `MEMED_SECRET_KEY` e `MEMED_EXTERNAL_PREFIX` (homologação: chaves públicas da documentação). Em produção, também `MEMED_API_URL` e `MEMED_SCRIPT_URL` informadas pela Memed. A homologação da Memed fica indisponível das 0h às 6h em dias úteis e nos fins de semana.
 
 ---
 
